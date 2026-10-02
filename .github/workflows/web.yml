@@ -1,0 +1,93 @@
+# Web app: typecheck, unit tests and a production build, then the full product end-to-end on the
+# simulated chain (API lifecycle, browser click-through, read-only smoke). Local servers only;
+# nothing here touches the deployed site or any keys.
+name: Web app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/web
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  check:
+    name: Typecheck, unit tests, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+
+  e2e:
+    name: End-to-end (simulated chain)
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+
+      # Two throwaway servers with short stage timers: one for the API lifecycle, one for the browser.
+      - name: Start test servers
+        run: |
+          VOTE_DURATION_SEC=15 DEPOSIT_WINDOW_SEC=15 LAUNCH_DELAY_SEC=4 LAUNCH_WINDOW_SEC=60 TRANCHE_COUNT=3 TRANCHE_INTERVAL_SEC=6 \
+            PGLITE_DIR=./.data/e2e PUBLIC_URL=http://localhost:3911 nohup npx next start -p 3911 > api-server.log 2>&1 &
+          VOTE_DURATION_SEC=40 DEPOSIT_WINDOW_SEC=35 LAUNCH_DELAY_SEC=3 LAUNCH_WINDOW_SEC=60 TRANCHE_COUNT=3 TRANCHE_INTERVAL_SEC=8 \
+            PGLITE_DIR=./.data/ui PUBLIC_URL=http://localhost:3912 nohup npx next start -p 3912 > ui-server.log 2>&1 &
+          for port in 3911 3912; do
+            for i in $(seq 1 60); do curl -sf "http://localhost:$port/api/health" >/dev/null && break; sleep 1; done
+          done
+
+      - name: API lifecycle
+        run: node --experimental-strip-types scripts/sim-e2e.ts http://localhost:3911
+
+      - name: Browser click-through
+        run: node scripts/ui-e2e.mjs http://localhost:3912 ./ui-shots
+
+      - name: Smoke
+        run: node scripts/smoke.mjs http://localhost:3912
+
+      - name: Upload screenshots and server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          if-no-files-found: ignore
+          path: |
+            apps/web/ui-shots
+            apps/web/*-server.log

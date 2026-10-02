@@ -1,0 +1,6 @@
+# Normalise text to LF in the repo; keep images and binaries untouched.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.so binary

@@ -1,7 +1,8 @@
 // Dev tool: renders the brand images from HTML (D-017).
 //   node scripts/brand-assets.mjs
 // Writes public/brand/x-banner.png (1500x500), public/brand/x-banner@2x.png (3000x1000) for the
-// X profile header, and src/app/opengraph-image.png (1200x630), the default link preview.
+// X profile header, src/app/opengraph-image.png (1200x630), the default link preview, and the
+// GitHub README hero and social preview in .github/assets/.
 // X covers the banner's bottom-left with the profile picture, so that corner stays empty.
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
@@ -92,6 +93,29 @@ const og = `<!doctype html><html><head><meta charset="utf-8">${fonts}<style>${ba
   <div class="grain"></div>
 </body></html>`;
 
+/** README hero: logo lockup and tagline on the left, the crowd orbit on the right. */
+const readme = `<!doctype html><html><head><meta charset="utf-8">${fonts}<style>${base(1600, 560)}
+  .grid{mask-image:radial-gradient(ellipse 50% 90% at 78% 50%,#000,transparent 75%)}
+</style></head><body>
+  <div style="position:absolute;inset:0;background:radial-gradient(55% 110% at 80% 50%,rgba(1,107,253,0.24),transparent 60%),radial-gradient(30% 50% at 40% 0%,rgba(255,208,50,0.05),transparent 70%)"></div>
+  <div class="grid"></div>
+  ${orbit(1250, 280, 1)}
+  <div style="position:absolute;left:110px;top:88px">
+    <div style="display:flex;align-items:center;gap:18px">
+      <img src="${logo}" style="width:76px;height:76px;border-radius:50%;box-shadow:0 0 0 2px rgba(255,255,255,0.15),0 20px 50px -10px rgba(1,107,253,0.8)">
+      <div style="font-size:44px;font-weight:600;letter-spacing:-1.6px">narrativepad</div>
+    </div>
+    <div class="silver" style="margin-top:44px;font-size:76px;font-weight:600;letter-spacing:-3px;line-height:1">The crowd builds the coin.</div>
+    <div class="gold" style="margin-top:6px;font-size:84px;line-height:1.05">Then buys it together.</div>
+    <div style="margin-top:34px;display:flex;gap:12px">
+      <div class="chip" style="font-size:19px;padding:8px 16px"><span class="dot"></span>Non-custodial escrow</div>
+      <div class="chip" style="font-size:19px;padding:8px 16px">Same price for everyone</div>
+      <div class="chip" style="font-size:19px;padding:8px 16px">100% refundable</div>
+    </div>
+  </div>
+  <div class="grain"></div>
+</body></html>`;
+
 const browser = await chromium.launch();
 async function render(html, w, h, scale, out) {
   const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: scale });
@@ -105,4 +129,7 @@ async function render(html, w, h, scale, out) {
 await render(xBanner, 1500, 500, 1, "public/brand/x-banner.png");
 await render(xBanner, 1500, 500, 2, "public/brand/x-banner@2x.png");
 await render(og, 1200, 630, 1, "src/app/opengraph-image.png");
+// GitHub: README hero and the repository's social preview (Settings → Social preview, 1280×640).
+await render(readme, 1600, 560, 1, "../../.github/assets/banner.png");
+await render(og.replaceAll("1200px", "1280px").replaceAll("630px", "640px"), 1280, 640, 1, "../../.github/assets/social-preview.png");
 await browser.close();

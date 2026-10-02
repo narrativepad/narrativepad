@@ -1,0 +1,40 @@
+name: Bug report
+description: Something on the site or in the code doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Security issues go through [private reporting](https://github.com/narrativepad/narrativepad/security/advisories/new), not here.** Never paste keys, seed phrases or API keys.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a coin in the Pooling stage
+        2. Click "Join the pool" with 0.5 SOL
+        3. ...
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Voting and ballots
+        - Pool, launch, claims, refunds
+        - Live chat
+        - Portfolio and watchlist
+        - Design and layout
+        - Escrow program
+        - Other
+  - type: input
+    id: where
+    attributes:
+      label: Link and device
+      placeholder: https://… · Chrome 130 on Windows / iPhone Safari

@@ -1,0 +1,23 @@
+name: Feature idea
+description: Suggest something that would make narrativepad better.
+labels: ["idea"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve?
+      description: Who is it for, and what's hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How it could work. Sketches and screenshots welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Does it touch funds?
+      description: If it changes how money moves, explain how it stays non-custodial and how refunds stay unblockable.

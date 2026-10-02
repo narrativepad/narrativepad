@@ -1,7 +1,7 @@
 # Builds the escrow program (and the test-only pump stand-in) and runs its unit, property and
 # LiteSVM tests on GitHub's machines, so nothing has to be installed locally.
 # Build and test only: no deploys, no keys, no secrets.
-name: escrow program
+name: Escrow program
 
 on:
   push:
@@ -34,6 +34,7 @@ concurrency:
 
 jobs:
   build-and-test:
+    name: Build & test (Anchor · LiteSVM)
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
@@ -89,7 +90,19 @@ jobs:
           solana-keygen new --no-bip39-passphrase --silent --force -o ~/.config/solana/id.json >/dev/null
 
       - name: Build and test
-        run: bash scripts/test-program.sh
+        run: |
+          set -o pipefail
+          bash scripts/test-program.sh 2>&1 | tee build.log
+
+      # Logs need a GitHub login to read; annotations are public. Surface the compiler errors and
+      # the end of the output as annotations so failures are visible to everyone.
+      - name: Report failures as annotations
+        if: failure()
+        run: |
+          enc() { sed 's/%/%25/g; s/\r//g' | awk 'BEGIN{ORS="%0A"} {print}'; }
+          errs=$(grep -n -A14 -E '^(error(\[E[0-9]+\])?:|thread .* panicked|test result: FAILED|failures:)' build.log | head -n 220 | enc)
+          [ -n "$errs" ] && echo "::error title=Build/test errors::${errs}"
+          echo "::error title=Last 80 lines::$(tail -n 80 build.log | enc)"
 
       - name: Upload build output
         if: always()
