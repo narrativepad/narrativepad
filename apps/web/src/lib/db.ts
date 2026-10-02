@@ -216,7 +216,10 @@ async function open(): Promise<Database> {
     };
   }
   const { PGlite } = await import("@electric-sql/pglite");
-  const pg = new PGlite(process.env.PGLITE_DIR ?? "./.data/pglite");
+  const dir = process.env.PGLITE_DIR ?? "./.data/pglite";
+  // PGlite creates only the last path segment; on a fresh checkout ./.data doesn't exist yet.
+  (await import("node:fs")).mkdirSync(dir, { recursive: true });
+  const pg = new PGlite(dir);
   await pg.exec(SCHEMA);
   return {
     query: (text, params) => pg.query(text, params as any[]),

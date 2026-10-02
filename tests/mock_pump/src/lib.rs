@@ -5,7 +5,7 @@
 //!
 //! The coin name selects a behaviour, so escrow tests can exercise failure paths:
 //!   "FAIL_CREATE…" create_v2 errors           "FAIL_BUY…"  buy errors
-//!   "OVERSPEND…"   buy takes 0.2 SOL extra     "SHORT…"     buy delivers 1 base unit
+//!   "OVERSPEND…"   buy drains the vault        "SHORT…"     buy delivers 1 base unit
 //!   "BAD_CREATOR…" curve records another creator
 
 use anchor_lang::prelude::*;
@@ -173,10 +173,12 @@ pub mod mock_pump {
             require!(out >= min_tokens_out, MockError::Slippage);
         }
 
-        // OVERSPEND takes a little more than asked, but no more than the vault holds above its
-        // reserve. A larger grab fails in the System Program before the escrow's post-condition
-        // runs, which is safe but wouldn't exercise the check this mode exists to test.
-        let take = if m == mode::OVERSPEND { spendable_quote_in + 20_000_000 } else { spendable_quote_in };
+        // OVERSPEND drains the buyer (the escrow vault) completely. That is more than the pool
+        // after the fee, since the vault also holds its rent floor, so the escrow's post-condition
+        // `spent <= pool_after_fee` must reject it. A smaller overspend that stays inside the
+        // 0.05 SOL launch reserve is allowed by design, and asking for more than the vault holds
+        // fails in the System Program before the post-condition ever runs.
+        let take = if m == mode::OVERSPEND { a.user.lamports() } else { spendable_quote_in };
         system_program::transfer(
             CpiContext::new(
                 a.system_program.key(),
