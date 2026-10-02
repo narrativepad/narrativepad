@@ -178,7 +178,7 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
             platform_fee,
             q.decimals,
         )?;
-        pump::read_token_account(&r[ra::ASSOCIATED_QUOTE_USER])?.2
+        pump::read_quote_balance(&r[ra::ASSOCIATED_QUOTE_USER], &q.token_program, &q.mint, &vault_key)?
     } else {
         vault_transfer(&a.system_program, &vault, &a.treasury.to_account_info(), &escrow_key, vault_bump, platform_fee)?;
         0
@@ -261,8 +261,8 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
     let (token_mint, token_owner, tokens) = pump::read_token_account(&vault_token_account)?;
     require!(token_mint == mint_key && token_owner == vault_key, EscrowError::InvalidAccount);
     require!(tokens >= min_out, EscrowError::LaunchUnderfilled);
-    let leftover = if quote.is_some() {
-        let quote_after = pump::read_token_account(&r[ra::ASSOCIATED_QUOTE_USER])?.2;
+    let leftover = if let Some(q) = &quote {
+        let quote_after = pump::read_quote_balance(&r[ra::ASSOCIATED_QUOTE_USER], &q.token_program, &q.mint, &vault_key)?;
         let spent = quote_before.saturating_sub(quote_after);
         require!(spent <= pool_after_fee, EscrowError::LaunchOverspent);
         pool_after_fee - spent

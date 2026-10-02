@@ -313,7 +313,17 @@ pub fn read_curve(info: &AccountInfo) -> Result<CurveState> {
     })
 }
 
-/// Reads (mint, owner, amount) from an SPL / Token-2022 token account's base layout.
+/// The balance of a token pool's account for its token (D-023): owned by the pool token's
+/// program (SPL Token or Token-2022), holding `mint`, owned by `owner`.
+pub fn read_quote_balance(info: &AccountInfo, token_program: &Pubkey, mint: &Pubkey, owner: &Pubkey) -> Result<u64> {
+    require_keys_eq!(*info.owner, *token_program, EscrowError::InvalidAccount);
+    let data = info.try_borrow_data()?;
+    require!(data.len() >= 72, EscrowError::InvalidAccount);
+    require!(data[0..32] == mint.to_bytes() && data[32..64] == owner.to_bytes(), EscrowError::InvalidAccount);
+    Ok(u64::from_le_bytes(data[64..72].try_into().unwrap()))
+}
+
+/// Reads (mint, owner, amount) from a Token-2022 token account's base layout (the coin's).
 pub fn read_token_account(info: &AccountInfo) -> Result<(Pubkey, Pubkey, u64)> {
     require_keys_eq!(*info.owner, TOKEN_2022_PROGRAM_ID, EscrowError::InvalidAccount);
     let data = info.try_borrow_data()?;
