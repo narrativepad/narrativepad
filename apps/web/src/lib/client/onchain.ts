@@ -1,13 +1,13 @@
 "use client";
 
-// Wallet-signed escrow deposits (CHAIN=solana, D-021). One transaction holds the holder-rewards
-// vote (a memo) and the deposit, so the vote is signed by the depositor and stored on-chain with it.
+// Wallet-signed escrow deposits (CHAIN=solana, D-021). The holder-rewards vote is an argument of
+// the deposit itself, tallied on-chain by the escrow and applied at launch (D-022).
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Transaction } from "@solana/web3.js";
 import { useCallback } from "react";
 import { uuidBytes } from "@/lib/math";
-import { depositIx, escrowPda, holderVoteMemoIx, programErrorName } from "@/lib/solana/escrow";
+import { depositIx, escrowPda, programErrorName } from "@/lib/solana/escrow";
 
 const FRIENDLY: Record<string, string> = {
   NotPooling: "The deposit window is not open",
@@ -42,7 +42,7 @@ export function useOnchainDeposit() {
       const balance = BigInt(await connection.getBalance(publicKey, "confirmed"));
       if (balance < lamports + 5_000_000n) throw new Error("Not enough devnet SOL. Get free test SOL at faucet.solana.com");
       const escrow = escrowPda(uuidBytes(narrativeId));
-      const tx = new Transaction().add(holderVoteMemoIx(holderRewards), depositIx(publicKey, escrow, lamports));
+      const tx = new Transaction().add(depositIx(publicKey, escrow, lamports, holderRewards));
       const {
         context: { slot: minContextSlot },
         value: { blockhash, lastValidBlockHeight },

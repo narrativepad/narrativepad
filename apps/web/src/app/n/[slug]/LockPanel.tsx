@@ -20,11 +20,15 @@ function FeeRow({ n }: { n: NarrativeDetail }) {
   const e = n.escrow;
   if (e?.holderRewards != null) {
     const m = FEE_MODE[e.holderRewards ? "on" : "off"];
+    // The escrow applies the vote at launch (D-022), unless pump has holder rewards switched off.
+    const votedOnButOff = !e.holderRewards && BigInt(e.holderVotesOn) > BigInt(e.holderVotesOff);
     return (
       <span>
         <span className="text-ink">{m.title}</span>
         <span className="block text-dim">
-          {n.preview ? `${m.sub}. Voted by the pool.` : "Devnet: pump.fun has holder rewards switched off there, so devnet coins launch with them off. The pool's vote is still recorded."}
+          {votedOnButOff
+            ? "The pool voted on, but pump.fun had holder rewards switched off (as on devnet), so the escrow launched with them off."
+            : `${m.sub}. Voted by the pool${n.preview ? "" : ", applied on-chain by the escrow"}.`}
         </span>
       </span>
     );

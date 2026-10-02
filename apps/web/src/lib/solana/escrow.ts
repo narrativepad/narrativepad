@@ -22,7 +22,11 @@ const IX = {
   refund: [2, 96, 183, 251, 63, 208, 46, 46],
   launch: [153, 241, 93, 225, 22, 69, 74, 61],
 };
-const ACCOUNT = { escrow: [31, 213, 123, 187, 186, 22, 218, 155], receipt: [39, 154, 73, 106, 80, 102, 145, 153] };
+const ACCOUNT = {
+  escrow: [31, 213, 123, 187, 186, 22, 218, 155],
+  receipt: [39, 154, 73, 106, 80, 102, 145, 153],
+  holderVote: [219, 96, 222, 206, 34, 240, 57, 113],
+};
 const EVENT = {
   Deposited: [111, 141, 26, 45, 161, 35, 100, 57],
   Launched: [209, 127, 29, 152, 129, 212, 189, 183],
@@ -45,6 +49,10 @@ export const escrowPda = (narrativeId16: Uint8Array) => pda([enc.encode("escrow"
 export const vaultPda = (escrow: PublicKey) => pda([enc.encode("vault"), escrow.toBytes()], PROGRAM_ID);
 export const receiptPda = (escrow: PublicKey, wallet: PublicKey) => pda([enc.encode("receipt"), escrow.toBytes(), wallet.toBytes()], PROGRAM_ID);
 export const mintPda = (escrow: PublicKey, nonce: bigint) => pda([enc.encode("mint"), escrow.toBytes(), u64le(nonce)], PROGRAM_ID);
+/** The pool's holder-rewards tally (D-022). */
+export const holderVotePda = (escrow: PublicKey) => pda([enc.encode("holder_vote"), escrow.toBytes()], PROGRAM_ID);
+/** pump's creator for a holder-rewards coin. */
+export const holderRewardsPda = (mint: PublicKey) => pda([enc.encode("holder-rewards"), mint.toBytes()], PUMP_PROGRAM_ID);
 export const ata = (owner: PublicKey, mint: PublicKey, tokenProgram: PublicKey) =>
   pda([owner.toBytes(), tokenProgram.toBytes(), mint.toBytes()], ASSOCIATED_TOKEN_PROGRAM_ID);
 
@@ -62,6 +70,7 @@ class Writer {
     return this.bytes(b);
   }
   u8 = (v: number) => this.num(1, (d) => d.setUint8(0, v));
+  bool = (v: boolean) => this.u8(v ? 1 : 0);
   u64 = (v: bigint) => this.num(8, (d) => d.setBigUint64(0, v, true));
   i64 = (v: bigint) => this.num(8, (d) => d.setBigInt64(0, v, true));
   str(s: string) {
@@ -122,6 +131,8 @@ class Reader {
   };
   str = () => new TextDecoder().decode(this.bytes(this.u32()));
   pubkey = () => new PublicKey(this.bytes(32));
+  /** Fields appended to events later (D-022) are missing from older logs. */
+  more = () => this.o < this.b.length;
 }
 
 const startsWith = (b: Uint8Array, disc: number[]) => b.length >= 8 && disc.every((x, i) => b[i] === x);
@@ -174,15 +185,30 @@ export function createEscrowIx(operator: PublicKey, a: CreateEscrowArgs) {
     .i64(a.trancheInterval)
     .done();
   return ix(
-    [{ pubkey: operator, isSigner: true, isWritable: true }, r(configPda()), w(escrow), w(vaultPda(escrow)), r(SystemProgram.programId)],
+    [
+      { pubkey: operator, isSigner: true, isWritable: true },
+      r(configPda()),
+      w(escrow),
+      w(vaultPda(escrow)),
+      r(SystemProgram.programId),
+      w(holderVotePda(escrow)),
+    ],
     data,
   );
 }
 
-export function depositIx(depositor: PublicKey, escrow: PublicKey, amount: bigint) {
+/** `holderRewards` is this deposit's vote; the program tallies it by `amount` (D-022). */
+export function depositIx(depositor: PublicKey, escrow: PublicKey, amount: bigint, holderRewards: boolean) {
   return ix(
-    [{ pubkey: depositor, isSigner: true, isWritable: true }, w(escrow), w(vaultPda(escrow)), w(receiptPda(escrow, depositor)), r(SystemProgram.programId)],
-    new Writer().bytes(IX.deposit).u64(amount).done(),
+    [
+      { pubkey: depositor, isSigner: true, isWritable: true },
+      w(escrow),
+      w(vaultPda(escrow)),
+      w(receiptPda(escrow, depositor)),
+      r(SystemProgram.programId),
+      w(holderVotePda(escrow)),
+    ],
+    new Writer().bytes(IX.deposit).u64(amount).bool(holderRewards).done(),
   );
 }
 
@@ -215,10 +241,8 @@ export function refundIx(escrow: PublicKey, wallet: PublicKey) {
   );
 }
 
-/** The holder-rewards vote travels with the deposit as a memo in the same signed transaction (D-021). */
+/** Before D-022 the vote travelled as a memo next to the deposit; sync still reads those. */
 export const HOLDER_VOTE_MEMO = { on: "narrativepad:holder-rewards:on", off: "narrativepad:holder-rewards:off" } as const;
-export const holderVoteMemoIx = (on: boolean) =>
-  new TransactionInstruction({ programId: MEMO_PROGRAM_ID, keys: [], data: Buffer.from(enc.encode(on ? HOLDER_VOTE_MEMO.on : HOLDER_VOTE_MEMO.off)) });
 export const parseHolderVoteMemo = (text: string): boolean | null =>
   text === HOLDER_VOTE_MEMO.on ? true : text === HOLDER_VOTE_MEMO.off ? false : null;
 
@@ -234,15 +258,29 @@ export function pumpFeesFromGlobal(data: Uint8Array): PumpFees {
   return { feeRecipient: new PublicKey(data.subarray(41, 73)), buybackRecipient: new PublicKey(data.subarray(741, 773)) };
 }
 
-/** `launch`: named accounts, then pump's accounts in `pump::ra` order (programs/…/pump.rs). */
-export function launchIx(o: { cranker: PublicKey; escrow: PublicKey; treasury: PublicKey; nonce: bigint; fees: PumpFees; createPayer?: "vault" | "cranker" }) {
+/** pump's `Global.is_holder_reward_enabled` (byte 1086); off on devnet today. */
+export const pumpHolderRewardsEnabled = (globalData: Uint8Array) => globalData.length > 1086 && globalData[1086] !== 0;
+
+/** `launch`: named accounts, then pump's accounts in `pump::ra` order (programs/…/pump.rs).
+ *  `holderRewards` must match what the program will decide (more SOL voted on, and pump has
+ *  them enabled): pump expects the creator vault of the holder-rewards PDA in that case. */
+export function launchIx(o: {
+  cranker: PublicKey;
+  escrow: PublicKey;
+  treasury: PublicKey;
+  nonce: bigint;
+  fees: PumpFees;
+  createPayer?: "vault" | "cranker";
+  holderRewards?: boolean;
+}) {
   const vault = vaultPda(o.escrow);
   const mint = mintPda(o.escrow, o.nonce);
   const t22 = TOKEN_2022_PROGRAM_ID;
   const wsolAta = (owner: PublicKey) => ata(owner, WSOL_MINT, SPL_TOKEN_PROGRAM_ID);
   const bondingCurve = pda([enc.encode("bonding-curve"), mint.toBytes()], PUMP_PROGRAM_ID);
   const solVault = pda([enc.encode("sol-vault")], MAYHEM_PROGRAM_ID);
-  const creatorVault = pda([enc.encode("creator-vault"), vault.toBytes()], PUMP_PROGRAM_ID);
+  const creator = o.holderRewards ? holderRewardsPda(mint) : vault;
+  const creatorVault = pda([enc.encode("creator-vault"), creator.toBytes()], PUMP_PROGRAM_ID);
   const userVolume = pda([enc.encode("user_volume_accumulator"), vault.toBytes()], PUMP_PROGRAM_ID);
   const remaining: AccountMeta[] = [
     r(pda([enc.encode("mint-authority")], PUMP_PROGRAM_ID)),
@@ -284,6 +322,7 @@ export function launchIx(o: { cranker: PublicKey; escrow: PublicKey; treasury: P
     r(t22),
     r(ASSOCIATED_TOKEN_PROGRAM_ID),
     r(SystemProgram.programId),
+    w(holderVotePda(o.escrow)),
     ...remaining,
   ];
   return { ix: ix(keys, new Writer().bytes(IX.launch).u64(o.nonce).done()), mint };
@@ -398,6 +437,23 @@ export interface ReceiptAccount {
   leftoverPaid: boolean;
 }
 
+export interface HolderVoteAccount {
+  on: bigint;
+  off: bigint;
+  /** Set at launch: the coin was created with pump's holder rewards. */
+  applied: boolean;
+}
+
+export function decodeHolderVote(data: Uint8Array): HolderVoteAccount {
+  if (!startsWith(data, ACCOUNT.holderVote)) throw new Error("not a HolderVote account");
+  const d = new Reader(data).skip(8 + 32);
+  return { on: d.u64(), off: d.u64(), applied: d.bool() };
+}
+
+/** The program's rule (D-022): on only with strictly more SOL behind "on", and pump allowing it. */
+export const holderRewardsWouldApply = (vote: HolderVoteAccount | null, pumpEnabled: boolean) =>
+  pumpEnabled && vote !== null && vote.on > vote.off;
+
 export function decodeReceipt(data: Uint8Array): ReceiptAccount {
   if (!startsWith(data, ACCOUNT.receipt)) throw new Error("not a Receipt account");
   const d = new Reader(data).skip(8 + 32);
@@ -411,8 +467,8 @@ export function decodeReceipt(data: Uint8Array): ReceiptAccount {
 // ---- events ---------------------------------------------------------------------------------
 
 export type EscrowEvent =
-  | { kind: "Deposited"; escrow: PublicKey; wallet: PublicKey; amount: bigint; orderIndex: number; timestamp: bigint }
-  | { kind: "Launched"; escrow: PublicKey; mint: PublicKey; platformFee: bigint; tokensBought: bigint; baseLeftover: bigint }
+  | { kind: "Deposited"; escrow: PublicKey; wallet: PublicKey; amount: bigint; orderIndex: number; timestamp: bigint; holderRewards: boolean | null }
+  | { kind: "Launched"; escrow: PublicKey; mint: PublicKey; platformFee: bigint; tokensBought: bigint; baseLeftover: bigint; holderRewards: boolean | null }
   | { kind: "Claimed"; escrow: PublicKey; wallet: PublicKey; tokens: bigint; leftoverLamports: bigint; unlockedTranches: number }
   | { kind: "Refunded"; escrow: PublicKey; wallet: PublicKey; amount: bigint };
 
@@ -430,14 +486,20 @@ export function parseEvents(logs: string[]): EscrowEvent[] {
         const amount = d.u64();
         const orderIndex = d.u32();
         d.u64(); // slot
-        out.push({ kind: "Deposited", escrow, wallet, amount, orderIndex, timestamp: d.i64() });
+        const timestamp = d.i64();
+        d.u64(); // wallet_total
+        d.u64(); // pool_total
+        out.push({ kind: "Deposited", escrow, wallet, amount, orderIndex, timestamp, holderRewards: d.more() ? d.bool() : null });
       } else if (startsWith(b, EVENT.Launched)) {
         const escrow = d.pubkey();
         const mint = d.pubkey();
         d.u64(); // pool_total
         const platformFee = d.u64();
         d.u64(); // buy_budget
-        out.push({ kind: "Launched", escrow, mint, platformFee, tokensBought: d.u64(), baseLeftover: d.u64() });
+        const tokensBought = d.u64();
+        const baseLeftover = d.u64();
+        d.i64(); // launched_at
+        out.push({ kind: "Launched", escrow, mint, platformFee, tokensBought, baseLeftover, holderRewards: d.more() ? d.bool() : null });
       } else if (startsWith(b, EVENT.Claimed)) {
         const escrow = d.pubkey();
         const wallet = d.pubkey();

@@ -23,7 +23,10 @@ import {
   claimIx,
   createEscrowIx,
   decodeEscrow,
+  decodeHolderVote,
   escrowPda,
+  holderRewardsWouldApply,
+  holderVotePda,
   launchIx,
   MEMO_PROGRAM_ID,
   parseEvents,
@@ -31,8 +34,10 @@ import {
   programErrorName,
   PUMP_PROGRAM_ID,
   pumpFeesFromGlobal,
+  pumpHolderRewardsEnabled,
   refundIx,
   vaultPda,
+  type HolderVoteAccount,
 } from "../solana/escrow";
 import { ChainError, type ChainAdapter, type EscrowParams, type LaunchStatus } from "./types";
 
@@ -119,6 +124,12 @@ async function escrowRow(narrativeId: string) {
 
 const secs = (d: Date) => BigInt(Math.floor(d.getTime() / 1000));
 
+/** The pool's on-chain holder-rewards tally; null for escrows from before D-022 with no new deposit. */
+async function holderVote(conn: Connection, escrow: PublicKey): Promise<HolderVoteAccount | null> {
+  const acc = await conn.getAccountInfo(holderVotePda(escrow));
+  return acc && acc.data.length ? decodeHolderVote(acc.data) : null;
+}
+
 /** Rebuild this escrow's cache from the chain: account totals, then every new transaction's
  *  events (deposits with their holder-rewards memo, claims, refunds, launch). Idempotent. */
 async function syncEscrow(narrativeId: string): Promise<void> {
@@ -138,10 +149,12 @@ async function syncEscrow(narrativeId: string): Promise<void> {
     const memo = tx.transaction.message.instructions.find(
       (ix): ix is ParsedInstruction => ix.programId.equals(MEMO_PROGRAM_ID) && "parsed" in ix && typeof ix.parsed === "string",
     );
-    const vote = memo ? parseHolderVoteMemo(memo.parsed as string) : null;
+    const memoVote = memo ? parseHolderVoteMemo(memo.parsed as string) : null;
     for (const ev of parseEvents(tx.meta.logMessages ?? [])) {
       if (!ev.escrow.equals(escrowKey)) continue;
       if (ev.kind === "Deposited") {
+        // D-022 deposits carry the vote in the event; earlier ones in a memo.
+        const vote = ev.holderRewards ?? memoVote;
         await q(
           `INSERT INTO deposits (narrative_id, order_index, wallet, amount, tx, holder_rewards, created_at)
            VALUES ($1,$2,$3,$4,$5,$6,to_timestamp($7)) ON CONFLICT (narrative_id, order_index) DO NOTHING`,
@@ -182,7 +195,9 @@ async function syncEscrow(narrativeId: string): Promise<void> {
      WHERE r.narrative_id = $1`,
     [narrativeId],
   );
-  // Totals come from the account: the chain wins.
+  // Totals come from the accounts: the chain wins. The vote tally and its result come from the
+  // HolderVote account (D-022); escrows from before it fall back to the deposits' memo votes.
+  const vote = await holderVote(conn, escrowKey);
   await q(
     `UPDATE escrows SET total_deposited = $2::bigint, total_refunded = $3::bigint, depositor_count = $4::int, next_order_index = $5::int,
        launched = $6::boolean,
@@ -190,9 +205,9 @@ async function syncEscrow(narrativeId: string): Promise<void> {
        mint = CASE WHEN $6::boolean THEN $8::text ELSE NULL END,
        tokens_bought = $9::bigint, tokens_claimed = $10::bigint, base_leftover = $11::bigint,
        platform_fee = CASE WHEN $6::boolean THEN COALESCE(platform_fee, $2::bigint * fee_bps / 10000) ELSE NULL END,
-       holder_rewards = CASE WHEN $6::boolean THEN FALSE ELSE NULL END,
-       holder_votes_on = (SELECT COALESCE(SUM(amount), 0) FROM deposits WHERE narrative_id = $1 AND holder_rewards = TRUE),
-       holder_votes_off = (SELECT COALESCE(SUM(amount), 0) FROM deposits WHERE narrative_id = $1 AND holder_rewards = FALSE),
+       holder_rewards = CASE WHEN $6::boolean THEN COALESCE($13::boolean, FALSE) ELSE NULL END,
+       holder_votes_on = COALESCE($14::bigint, (SELECT COALESCE(SUM(amount), 0) FROM deposits WHERE narrative_id = $1 AND holder_rewards = TRUE)),
+       holder_votes_off = COALESCE($15::bigint, (SELECT COALESCE(SUM(amount), 0) FROM deposits WHERE narrative_id = $1 AND holder_rewards = FALSE)),
        sync_sig = COALESCE($12::text, sync_sig), synced_at = now()
      WHERE narrative_id = $1`,
     [
@@ -208,6 +223,9 @@ async function syncEscrow(narrativeId: string): Promise<void> {
       e.tokensClaimed.toString(),
       e.baseLeftover.toString(),
       sigs[0]?.signature ?? null,
+      vote ? vote.applied : null,
+      vote ? vote.on.toString() : null,
+      vote ? vote.off.toString() : null,
     ],
   );
 }
@@ -282,6 +300,9 @@ export const solanaAdapter: ChainAdapter = {
     const e = decodeEscrow(acc.data);
     const global = await conn.getAccountInfo(PublicKey.findProgramAddressSync([new TextEncoder().encode("global")], PUMP_PROGRAM_ID)[0]);
     if (!global) throw new Error("pump Global not found");
+    // The program decides holder rewards from the tally and pump's switch (D-022); the accounts
+    // passed to pump must match that decision, so predict it the same way.
+    const holderRewards = holderRewardsWouldApply(await holderVote(conn, escrow), pumpHolderRewardsEnabled(global.data));
     const nonce = randomBytes(8).readBigUInt64LE();
     const { ix, mint } = launchIx({
       cranker: operator().publicKey,
@@ -290,13 +311,14 @@ export const solanaAdapter: ChainAdapter = {
       nonce,
       fees: pumpFeesFromGlobal(global.data),
       createPayer: config.solana.createPayer,
+      holderRewards,
     });
     const { sig } = await send([ix], { cu: 1_000_000, alt: await launchAlt(conn) });
     await syncEscrow(narrativeId);
     await q(`UPDATE escrows SET launch_tx = COALESCE(launch_tx, $2) WHERE narrative_id = $1`, [narrativeId, sig]);
     const after = decodeEscrow((await conn.getAccountInfo(escrow))!.data);
-    // pump has holder rewards switched off on devnet, and the program doesn't set it yet (D-019).
-    return { tx: sig, mint: mint.toBase58(), tokensBought: after.tokensBought, holderRewards: false };
+    const applied = (await holderVote(conn, escrow))?.applied ?? false;
+    return { tx: sig, mint: mint.toBase58(), tokensBought: after.tokensBought, holderRewards: applied };
   },
 
   async claim(narrativeId, wallet) {
@@ -318,12 +340,14 @@ export const solanaAdapter: ChainAdapter = {
 
   async getLaunchStatus(narrativeId): Promise<LaunchStatus> {
     const row = await escrowRow(narrativeId);
-    const acc = await (await devnet()).getAccountInfo(new PublicKey(row.address));
+    const conn = await devnet();
+    const acc = await conn.getAccountInfo(new PublicKey(row.address));
     if (!acc) throw new ChainError("NotFound", "Escrow not found on-chain");
     const e = decodeEscrow(acc.data);
+    const vote = await holderVote(conn, new PublicKey(row.address));
     return {
       launched: e.launched,
-      holderRewards: e.launched ? false : null,
+      holderRewards: e.launched ? (vote?.applied ?? false) : null,
       mint: e.launched ? e.mint.toBase58() : null,
       tx: row.launch_tx ?? null,
       tokensBought: e.tokensBought,

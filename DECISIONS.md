@@ -369,4 +369,43 @@ Format: date — decision — why — alternatives considered — decided by.
 - **Alternatives:** Anchor's TS client (heavier, and it pins web3 versions); server-side
   deposits (custodial, rejected); an indexer service (overkill for devnet; `sync` is enough
   for now).
+
+### D-022 · 2026-10-02 · Holder-rewards vote enforced by the escrow program
+- **Decision:** the pool's vote is part of the program, not just recorded by the site.
+- **How it works:**
+  - **Deposit:** `deposit(amount, holder_rewards)`. The program adds `amount` to `on` or `off`
+    in a per-escrow `HolderVote` PDA (`["holder_vote", escrow]`).
+  - **Separate account:** the tally lives in its own account rather than new `Escrow` fields,
+    so escrows created before the upgrade keep their layout. `create_escrow` creates the
+    account (the operator pays); for older escrows the first new deposit creates it.
+  - **Launch:** `is_holder_reward = on > off && pump Global.is_holder_reward_enabled`.
+    - A tie is off.
+    - If pump has the feature off (devnet today), the coin launches with it off instead of
+      failing with `HolderRewardDisabled`.
+    - The curve-creator post-check expects pump's `["holder-rewards", mint]` PDA when on.
+    - The result is stored as `HolderVote.applied` and emitted in `Launched` (with the
+      tally).
+  - **Distribution:** with holder rewards applied, `distribute_creator_fees` gives 100% of
+    vault income to depositors (no proposer or platform share). pump pays holder rewards to
+    token holders, and the vault holds tokens for depositors while they vest.
+  - **Can't skip the vote:** `launch` and `distribute` take the vote account at its PDA
+    (seeds-checked). A missing account (older escrow, no new deposit) counts as no vote.
+  - **The site:** the deposit memo is gone; the vote is the instruction argument. `sync`
+    reads tally and result from `HolderVote`, and the launch predicts the outcome to pass
+    pump the right creator vault.
+- **Tests:** new LiteSVM cases cover:
+  - the tally;
+  - "on" winning by SOL against more wallets;
+  - a tie or an "off" majority;
+  - the fallback when pump has the feature off;
+  - a launch with the wrong creator vault being rejected;
+  - escrows from before the vote;
+  - a swapped vote account (`ConstraintSeeds`);
+  - distribution with holder rewards on.
+
+  The mock pump now enforces the Global flag and the creator vault like pump.
+- **Deployed:** upgrade from `59d65aa` (499,360 bytes; program data extended by 40,000).
+  The site deployed right after, because the launch account layout changed.
+- **Still open for mainnet:** pump pays holder rewards through its own off-chain distributor.
+  Whether that includes the vault while tokens vest needs confirming with pump before mainnet.
 - **Decided by:** owner ("start devnet", "why can't it happen without my wallets") + Claude.

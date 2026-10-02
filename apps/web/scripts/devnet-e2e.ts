@@ -15,7 +15,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { uuidBytes } from "../src/lib/math.ts";
 import { buildMessage, type Action, type Payload } from "../src/lib/messages.ts";
-import { ata, decodeEscrow, depositIx, escrowPda, holderVoteMemoIx, PROGRAM_ID, programErrorName, TOKEN_2022_PROGRAM_ID, vaultPda } from "../src/lib/solana/escrow.ts";
+import {
+  ata,
+  decodeEscrow,
+  decodeHolderVote,
+  depositIx,
+  escrowPda,
+  holderVotePda,
+  PROGRAM_ID,
+  programErrorName,
+  PUMP_PROGRAM_ID,
+  pumpHolderRewardsEnabled,
+  TOKEN_2022_PROGRAM_ID,
+  vaultPda,
+} from "../src/lib/solana/escrow.ts";
 
 const BASE = process.argv[2] ?? "http://localhost:3921";
 const FUNDER = process.argv[3];
@@ -40,9 +53,9 @@ class Wallet {
     });
     return { status: res.status, data: await res.json().catch(() => ({})) };
   }
-  /** What the browser does: memo (vote) + deposit in one wallet-signed transaction. */
+  /** What the browser does: a wallet-signed deposit carrying the holder-rewards vote. */
   async deposit(narrativeId: string, lamports: bigint, holderRewards: boolean) {
-    const tx = new Transaction().add(holderVoteMemoIx(holderRewards), depositIx(this.kp.publicKey, escrowPda(uuidBytes(narrativeId)), lamports));
+    const tx = new Transaction().add(depositIx(this.kp.publicKey, escrowPda(uuidBytes(narrativeId)), lamports, holderRewards));
     const sig = await sendAndConfirmTransaction(conn, tx, [this.kp], { commitment: "confirmed" });
     await fetch(`${BASE}/api/narratives/${narrativeId}/sync`, { method: "POST" });
     return sig;
@@ -119,7 +132,9 @@ async function main() {
   ]);
   assert.equal(n.escrow.holderVotesOn, ((SOL * 8n) / 100n).toString());
   assert.equal(BigInt(await conn.getBalance(vaultPda(escrow))) >= (SOL * 14n) / 100n, true, "the SOL is in the vault");
-  ok(`0.14 SOL deposited by two wallets, in order, votes read from their memos: ${explorer("tx", a1)}`);
+  const tally = decodeHolderVote((await conn.getAccountInfo(holderVotePda(escrow)))!.data);
+  assert.deepEqual([tally.on, tally.off], [(SOL * 8n) / 100n, (SOL * 6n) / 100n], "the escrow tallies the votes on-chain");
+  ok(`0.14 SOL deposited by two wallets, in order; on-chain tally 0.08 on / 0.06 off: ${explorer("tx", a1)}`);
 
   // ---- launch on pump.fun devnet ---------------------------------------------------------------
   n = await waitFor(slug, (x) => x.escrow?.launched, "launch", 300_000);
@@ -129,7 +144,16 @@ async function main() {
   const vaultTokens = await conn.getTokenAccountBalance(ata(vaultPda(escrow), after.mint, TOKEN_2022_PROGRAM_ID));
   assert.equal(vaultTokens.value.amount, after.tokensBought.toString(), "the vault holds every token bought");
   assert.equal(n.stage, "live");
-  ok(`launched on pump.fun devnet: ${after.tokensBought} base units bought, mint ${explorer("address", after.mint.toBase58())}`);
+  // "On" won the vote. The escrow applies it only if pump allows holder rewards (off on devnet).
+  const pumpGlobal = await conn.getAccountInfo(PublicKey.findProgramAddressSync([new TextEncoder().encode("global")], PUMP_PROGRAM_ID)[0]);
+  const expected = pumpHolderRewardsEnabled(pumpGlobal!.data);
+  const settled = decodeHolderVote((await conn.getAccountInfo(holderVotePda(escrow)))!.data);
+  assert.equal(settled.applied, expected, "holder rewards applied iff pump allows them");
+  assert.equal(n.escrow.holderRewards, expected);
+  const curve = await conn.getAccountInfo(PublicKey.findProgramAddressSync([new TextEncoder().encode("bonding-curve"), after.mint.toBytes()], PUMP_PROGRAM_ID)[0]);
+  const creator = new PublicKey(curve!.data.subarray(49, 81));
+  assert.ok(creator.equals(expected ? PublicKey.findProgramAddressSync([new TextEncoder().encode("holder-rewards"), after.mint.toBytes()], PUMP_PROGRAM_ID)[0] : vaultPda(escrow)));
+  ok(`launched on pump.fun devnet: ${after.tokensBought} base units; holder rewards ${expected ? "on" : "off (pump has them disabled on devnet)"}, creator ${creator.toBase58().slice(0, 6)}…`);
   if (n.escrow.launchTxUrl) console.log(`       launch tx: ${n.escrow.launchTxUrl}`);
 
   // ---- claim (server pushes; tokens land in the depositor's account) --------------------------
