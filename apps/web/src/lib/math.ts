@@ -14,7 +14,7 @@ export const PUMP = {
   totalSupply: 1_000_000_000_000_000n,
   feeBps: 125n,
 };
-export const LAUNCH_RENT_RESERVE = 50_000_000n; // 0.05 SOL
+export const LAUNCH_RENT_RESERVE = 20_000_000n; // 0.02 SOL (constants.rs, D-026)
 export const MAX_CURVE_FILL_BPS = 9_000n;
 
 export const mulDivFloor = (a: bigint, b: bigint, c: bigint): bigint => {

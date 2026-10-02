@@ -24,10 +24,10 @@ test("opening buy matches the research table (10 SOL → ~265.76M tokens)", () =
   assert.ok(out > 265_700_000_000_000n && out < 265_800_000_000_000n, String(out));
 });
 
-test("launch breakdown: 1% fee, 0.05 SOL rent reserve", () => {
+test("launch breakdown: 1% fee, 0.02 SOL rent reserve", () => {
   const b = launchBreakdown(10_000_000_000n, 100);
   assert.equal(b.platformFee, 100_000_000n);
-  assert.equal(b.budget, 10_000_000_000n - 100_000_000n - 50_000_000n);
+  assert.equal(b.budget, 10_000_000_000n - 100_000_000n - 20_000_000n);
 });
 
 test("uniform vesting: 1 at launch, +1 per interval, capped", () => {

@@ -46,5 +46,7 @@ test("token pools spend the whole pool after the fee; SOL pools keep the rent re
   assert.equal(tok.budget, 3_960_000n);
   assert.equal(tok.reserve, 0n);
   const sol = launchBreakdown(1_000_000_000n, 100, curveOf(SOL_UNIT));
-  assert.equal(sol.reserve, 50_000_000n);
+  assert.equal(sol.reserve, 20_000_000n);
+  // D-026: a lone 0.1 SOL pool buys with 0.079 SOL.
+  assert.equal(launchBreakdown(100_000_000n, 100, curveOf(SOL_UNIT)).budget, 79_000_000n);
 });

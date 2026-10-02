@@ -90,6 +90,10 @@ fn create_escrow_rejects_non_operator_and_bad_params() {
     expect_err(env.create(p), code(E::InvalidLimits));
 
     let mut p = env.spec("Coin");
+    p.pool_min = MIN_POOL_MIN - 1; // below the SOL pool floor
+    expect_err(env.create(p), code(E::InvalidLimits));
+
+    let mut p = env.spec("Coin");
     p.launch_deadline = p.launch_after + 10; // launch window too short
     expect_err(env.create(p), code(E::InvalidSchedule));
 
@@ -271,6 +275,34 @@ fn no_refund_after_launch() {
 }
 
 // ---- launch ---------------------------------------------------------------------------------
+
+/// D-026: a pool at the floor can be opened, and a single 0.1 SOL deposit launches with
+/// 0.1 - 1% fee - 0.02 reserve = 0.079 SOL buying; what rent doesn't use goes back to the depositor.
+#[test]
+fn small_pool_launches_with_most_of_it_buying() {
+    let mut env = Env::new();
+    let mut p = env.spec("Small");
+    p.pool_min = MIN_POOL_MIN;
+    p.min_deposit = SOL / 100;
+    let id = p.narrative_id;
+    ok(env.create(p));
+    let escrow = escrow_pda(&id);
+    let a = env.funded(1);
+    ok(env.deposit(&a, &escrow, SOL / 10));
+
+    let crank = env.funded(1);
+    env.set_time(T0 + 720);
+    ok(env.launch(&crank, &escrow, 1));
+    let e = env.escrow(&escrow);
+    assert!(e.launched);
+    let budget = SOL / 10 - SOL / 1000 - LAUNCH_RENT_RESERVE;
+    assert_eq!(budget, 79_000_000, "0.079 SOL buys");
+    let net = math::mul_div_floor(budget - 1, 10_000, 10_125).unwrap();
+    assert_eq!(e.tokens_bought, math::curve_tokens_out(net, 1_073_000_000_000_000, 30_000_000_000).unwrap());
+    let vault_now = env.lamports(&vault_pda(&escrow));
+    assert_eq!(vault_now, env.svm.minimum_balance_for_rent_exemption(0) + e.base_leftover);
+    assert!(e.base_leftover > 0 && e.base_leftover <= LAUNCH_RENT_RESERVE, "unused rent is owed back");
+}
 
 #[test]
 fn launch_happy_path() {

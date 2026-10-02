@@ -20,7 +20,8 @@ pub const MAX_FEE_BPS: u16 = 200;
 // ---- Launch safety ------------------------------------------------------------------------
 /// Lamports held back from the opening buy to pay rent for the accounts pump creates
 /// (mint, bonding curve, ATAs, volume accumulator). Unspent remainder is refunded pro-rata.
-pub const LAUNCH_RENT_RESERVE: u64 = 50_000_000; // 0.05 SOL
+/// A devnet launch used 0.0093 SOL (2026-10-02); this keeps about 2x that (D-026).
+pub const LAUNCH_RENT_RESERVE: u64 = 20_000_000; // 0.02 SOL
 /// Token pools hold no SOL, so the cranker lends the vault this much for the launch's rents and
 /// gets the unspent part back in the same instruction (D-023).
 pub const TOKEN_LAUNCH_RENT: u64 = 50_000_000; // 0.05 SOL
@@ -35,7 +36,8 @@ pub const MAX_CURVE_FILL_BPS: u64 = 9_000;
 pub const NAME_MAX_LEN: usize = 32;
 pub const SYMBOL_MAX_LEN: usize = 13;
 pub const URI_MAX_LEN: usize = 200;
-pub const MIN_POOL_MIN: u64 = 100_000_000; // 0.1 SOL
+/// Smallest pool minimum a SOL pool may set: enough to cover the fee and rent reserve and still buy (D-026).
+pub const MIN_POOL_MIN: u64 = 30_000_000; // 0.03 SOL
 pub const MIN_DEPOSIT_WINDOW_SECS: i64 = 60;
 pub const MAX_DEPOSIT_WINDOW_SECS: i64 = 7 * 24 * 60 * 60;
 pub const MIN_LAUNCH_WINDOW_SECS: i64 = 60;

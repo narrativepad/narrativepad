@@ -226,7 +226,7 @@ pub mod mock_pump {
         // OVERSPEND drains the buyer (the escrow vault) completely. That is more than the pool
         // after the fee, since the vault also holds its rent floor, so the escrow's post-condition
         // `spent <= pool_after_fee` must reject it. A smaller overspend that stays inside the
-        // 0.05 SOL launch reserve is allowed by design, and asking for more than the vault holds
+        // launch rent reserve is allowed by design, and asking for more than the vault holds
         // fails in the System Program before the post-condition ever runs.
         if token_quote {
             // Token pair: the quote moves from the buyer's quote account to the curve's. OVERSPEND

@@ -27,7 +27,7 @@ const admin = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(keyP
 const operator = new PublicKey(operatorArg);
 const treasury = new PublicKey(treasuryArg);
 const maxPoolCap = BigInt(Math.round(Number(capArg) * 1e9));
-if (!(maxPoolCap >= 100_000_000n && maxPoolCap <= 2_000_000_000n)) throw new Error("devnet max pool cap must be 0.1–2 SOL");
+if (!(maxPoolCap >= 30_000_000n && maxPoolCap <= 2_000_000_000n)) throw new Error("devnet max pool cap must be 0.03–2 SOL");
 
 const conn = new Connection(RPC, "confirmed");
 const [config] = PublicKey.findProgramAddressSync([Buffer.from("config")], PROGRAM_ID);

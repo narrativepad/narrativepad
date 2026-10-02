@@ -12,8 +12,8 @@ import { unitOfEscrow } from "../pools";
 import { curveOf } from "../units";
 import { ChainError, tokenColumns, type ChainAdapter, type EscrowParams, type LaunchStatus } from "./types";
 
-/** Rent pump would charge for the new mint, curve, ATAs and volume accumulator (≈ measured). */
-const SIM_LAUNCH_RENT = 28_500_000n;
+/** Rent a real launch used for the new mint, curve, ATAs and volume accumulator (devnet, 2026-10-02). */
+const SIM_LAUNCH_RENT = 9_300_000n;
 
 const fakeAddress = (kind: string, id: string) =>
   bs58.encode(sha256(new TextEncoder().encode(`narrativepad-sim:${kind}:${id}`)));
