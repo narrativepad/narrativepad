@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Coin } from "@/components/bits";
 import { Countdown } from "@/components/Countdown";
 import { config } from "@/lib/config";
+import { poolReady } from "@/lib/pairs";
+import { pumpPairs } from "@/lib/pumpPairs";
 import { feed } from "@/lib/views";
 import { CreateForm } from "./CreateForm";
 
@@ -10,13 +12,14 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Start a narrative" };
 
 export default async function CreatePage() {
-  const open = (await feed()).filter((n) => n.stage === "voting").sort((a, b) => b.votes - a.votes).slice(0, 12);
+  const [all, pairs] = await Promise.all([feed(), pumpPairs({ wait: false })]);
+  const open = all.filter((n) => n.stage === "voting").sort((a, b) => b.votes - a.votes).slice(0, 12);
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3 px-1">
         <div>
           <h1 className="text-[2.2rem] font-semibold leading-tight tracking-[-0.04em] sm:text-[2.8rem]"><span className="text-silver">Start a </span><span className="display text-gradient pr-2 text-[1.06em]">narrative</span></h1>
-          <p className="text-sm text-muted">A short pitch and a source. The crowd decides the name, ticker, image and pair.</p>
+          <p className="text-sm text-muted">A pitch, a source and the pair. The crowd decides the name, ticker and image.</p>
         </div>
         <div className="flex gap-2 text-xs text-dim">
           <span className="chip">voting {Math.round(config.voteDurationSec / 60)} min</span>
@@ -25,7 +28,7 @@ export default async function CreatePage() {
         </div>
       </div>
       <div className="grid gap-3 lg:min-h-0 lg:flex-1 2xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <CreateForm />
+        <CreateForm pairs={pairs.map((p) => ({ ...p, ready: poolReady(p.symbol) }))} />
         <aside className="panel hidden min-h-0 flex-col 2xl:flex">
           <div className="panel-head">
             <span>Open ballots right now</span>

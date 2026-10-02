@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { formatSol, formatTokens } from "@/lib/math";
+import { formatTokens } from "@/lib/math";
 import { displayName } from "@/lib/names";
+import { SOL_UNIT, withUnit } from "@/lib/units";
 import type { GlobalActivityItem } from "@/lib/views";
 import { Avatar } from "./bits";
 
@@ -16,7 +17,7 @@ function Item({ a }: { a: GlobalActivityItem }) {
   const v = VERB[a.kind];
   const amount =
     a.kind === "deposit" || a.kind === "refund"
-      ? `${formatSol(BigInt(a.amount ?? "0"))} SOL`
+      ? withUnit(a.amount ?? "0", a.unit ?? SOL_UNIT)
       : a.kind === "claim"
         ? `${formatTokens(BigInt(a.amount ?? "0"))}`
         : null;

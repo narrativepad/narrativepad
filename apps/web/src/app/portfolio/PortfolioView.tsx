@@ -9,7 +9,8 @@ import { Countdown } from "@/components/Countdown";
 import { useToast } from "@/components/Providers";
 import { useWatchlist } from "@/lib/client/local";
 import { useIdentity, useSigned } from "@/lib/client/useSigned";
-import { formatSol, formatTokens } from "@/lib/math";
+import { formatTokens } from "@/lib/math";
+import { totalsByUnit, toWhole, withUnit } from "@/lib/units";
 import type { NarrativeCard, PortfolioItem } from "@/lib/views";
 
 const claimableOf = (p: PortfolioItem) => BigInt(p.claimable) + BigInt(p.leftover);
@@ -123,14 +124,14 @@ export function PortfolioView() {
 
       <section className="grid grid-cols-2 gap-px overflow-hidden rounded-[1.25rem] border border-white/[0.07] bg-white/[0.07] lg:grid-cols-4">
         <Stat label="In open pools">
-          <AnimatedNumber value={Number(sum(open, (p) => BigInt(p.deposited))) / 1e9} format="sol" /> <span className="text-base font-normal text-dim">SOL</span>
+          <Totals items={open} />
         </Stat>
         <Stat label="Claimable now" tone="text-accent">
           <AnimatedNumber value={Number(sum(claimable, (p) => BigInt(p.claimable)) / 1_000_000n)} format="tokens" />{" "}
           <span className="text-base font-normal text-dim">tokens</span>
         </Stat>
         <Stat label="Refundable" tone={refundable.length ? "text-danger" : ""}>
-          <AnimatedNumber value={Number(sum(refundable, (p) => BigInt(p.deposited))) / 1e9} format="sol" /> <span className="text-base font-normal text-dim">SOL</span>
+          <Totals items={refundable} />
         </Stat>
         <Stat label="Pools joined">
           <AnimatedNumber value={items?.length ?? 0} />
@@ -211,13 +212,13 @@ function Position({
   if (claim > 0n) {
     action = (
       <button className="btn-accent h-10" disabled={busy !== null} onClick={() => act("claim")}>
-        {busy === `claim:${p.narrativeId}` ? "Claiming…" : BigInt(p.claimable) > 0n ? `Claim ${formatTokens(BigInt(p.claimable))}` : `Claim ${formatSol(BigInt(p.leftover), 4)} SOL`}
+        {busy === `claim:${p.narrativeId}` ? "Claiming…" : BigInt(p.claimable) > 0n ? `Claim ${formatTokens(BigInt(p.claimable))}` : `Claim ${withUnit(p.leftover, p.unit, 4)}`}
       </button>
     );
   } else if (canRefund(p)) {
     action = (
       <button className="btn-danger h-10" disabled={busy !== null} onClick={() => act("refund")}>
-        {busy === `refund:${p.narrativeId}` ? "Refunding…" : `Refund ${formatSol(BigInt(p.deposited))} SOL`}
+        {busy === `refund:${p.narrativeId}` ? "Refunding…" : `Refund ${withUnit(p.deposited, p.unit)}`}
       </button>
     );
   } else if (p.refunded) {
@@ -251,7 +252,7 @@ function Position({
             <StageBadge stage={p.stage} />
           </span>
           <span className="num mt-0.5 block text-[0.8rem] text-muted">
-            {formatSol(BigInt(p.deposited))} SOL in · {p.sharePct.toFixed(2)}% of the pool
+            {withUnit(p.deposited, p.unit)} in · {p.sharePct.toFixed(2)}% of the pool
           </span>
         </span>
       </Link>
@@ -272,5 +273,18 @@ function Position({
       )}
       <div className="flex shrink-0 justify-end sm:w-48">{action}</div>
     </li>
+  );
+}
+
+/** What a wallet has in pools, per currency (SOL and USDC pools don't add up). */
+function Totals({ items }: { items: PortfolioItem[] }) {
+  return (
+    <span className="flex flex-col">
+      {totalsByUnit(items.map((p) => ({ amount: p.deposited, unit: p.unit }))).map((t) => (
+        <span key={t.unit.symbol}>
+          <AnimatedNumber value={toWhole(t.total, t.unit)} format="sol" /> <span className="text-base font-normal text-dim">{t.unit.symbol}</span>
+        </span>
+      ))}
+    </span>
   );
 }

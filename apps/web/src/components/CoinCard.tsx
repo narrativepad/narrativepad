@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { formatSol, formatTokens, launchBreakdown, PUMP } from "@/lib/math";
+import { formatTokens, launchBreakdown, PUMP } from "@/lib/math";
+import { curveOf, toWhole, withUnit } from "@/lib/units";
 import type { NarrativeCard } from "@/lib/views";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { Coin, coinTint, Icon, ProgressBar, Sparkline, StageBadge, STAGE } from "./bits";
 import { Countdown } from "./Countdown";
+import { PairChip } from "./Pair";
 import { StarButton } from "./StarButton";
 
 function Timer({ to, done, tone }: { to: string; done: string; tone: string }) {
@@ -56,11 +58,7 @@ export function CoinCard({ n, href, hot = false, showTrend = false }: { n: Narra
         <div className="mt-3 flex min-w-0 items-baseline gap-2">
           <h3 className="truncate text-[1.06rem] font-semibold tracking-tight">{n.title}</h3>
           {n.ticker && <span className="num shrink-0 text-[0.78rem] font-medium text-dim">${n.ticker}</span>}
-          {n.pair && n.pair !== "SOL" && (
-            <span className="num ml-auto shrink-0 self-center rounded-full border border-gold/30 bg-gold/[0.08] px-2 py-0.5 text-[0.66rem] font-semibold text-gold" title={`Paired with ${n.pair}`}>
-              /{n.pair}
-            </span>
-          )}
+          {n.pair && <PairChip pair={n.pair} className="ml-auto self-center" />}
         </div>
         <p className="mt-1 line-clamp-2 min-h-[2.6em] text-[0.84rem] leading-snug text-muted">{n.pitch}</p>
 
@@ -69,7 +67,7 @@ export function CoinCard({ n, href, hot = false, showTrend = false }: { n: Narra
             <Icon name="trend" className="h-3.5 w-3.5 text-accent" />
             <span>last 15 min:</span>
             {t.votes > 0 && <span className="text-violet">+{t.votes} votes</span>}
-            {t.deposits > 0 && <span className="text-gold">+{formatSol(BigInt(t.lamports))} SOL</span>}
+            {t.deposits > 0 && e && <span className="text-gold">+{withUnit(t.lamports, e.unit)}</span>}
             {t.comments > 0 && <span className="text-accent-2">+{t.comments} msgs</span>}
           </p>
         )}
@@ -96,8 +94,8 @@ export function CoinCard({ n, href, hot = false, showTrend = false }: { n: Narra
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-3">
                 <span className="num text-[1.05rem] font-semibold">
-                  <AnimatedNumber value={Number(total) / 1e9} format="sol" />{" "}
-                  <span className="text-[0.78rem] font-normal text-dim">/ {formatSol(BigInt(e.poolCap))} SOL</span>
+                  <AnimatedNumber value={toWhole(total, e.unit)} format="sol" />{" "}
+                  <span className="text-[0.78rem] font-normal text-dim">/ {withUnit(e.poolCap, e.unit)}</span>
                 </span>
                 <Timer
                   to={n.stage === "pooling" ? e.depositEnd : e.launchAfter}
@@ -109,7 +107,9 @@ export function CoinCard({ n, href, hot = false, showTrend = false }: { n: Narra
               <div className="flex items-center justify-between text-[0.75rem] text-dim">
                 <span>{e.depositorCount === 0 ? "Nobody in yet" : `${e.depositorCount} in the pool`}</span>
                 <span>
-                  {total > 0n ? `≈ ${launchBreakdown(total, e.feeBps).pctOfSupply.toFixed(1)}% of supply at launch` : `${formatSol(BigInt(e.poolMin))} SOL needed to launch`}
+                  {total > 0n
+                    ? `≈ ${launchBreakdown(total, e.feeBps, curveOf(e.unit)).pctOfSupply.toFixed(1)}% of supply at launch`
+                    : `${withUnit(e.poolMin, e.unit)} needed to launch`}
                 </span>
               </div>
             </div>

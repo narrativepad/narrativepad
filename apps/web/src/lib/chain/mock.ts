@@ -8,7 +8,9 @@ import { randomBytes } from "node:crypto";
 import { big, date, q1, transaction, type Queryable } from "../db";
 import { launchBreakdown, LAUNCH_RENT_RESERVE, MAX_CURVE_FILL_BPS, PUMP, proRata, unlockedTranches, vested } from "../math";
 import { phaseOf } from "../phase";
-import { ChainError, type ChainAdapter, type EscrowParams, type LaunchStatus } from "./types";
+import { unitOfEscrow } from "../pools";
+import { curveOf } from "../units";
+import { ChainError, tokenColumns, type ChainAdapter, type EscrowParams, type LaunchStatus } from "./types";
 
 /** Rent pump would charge for the new mint, curve, ATAs and volume accumulator (≈ measured). */
 const SIM_LAUNCH_RENT = 28_500_000n;
@@ -40,7 +42,6 @@ const phaseFor = (e: any, now = Date.now()) =>
 export const mockAdapter: ChainAdapter = {
   kind: "mock",
   simulated: true,
-  currency: "SOL",
 
   async createEscrow(p: EscrowParams) {
     const address = fakeAddress("escrow", p.narrativeId);
@@ -48,13 +49,15 @@ export const mockAdapter: ChainAdapter = {
     const tx = fakeTx();
     await q1(
       `INSERT INTO escrows (narrative_id, chain, address, vault, create_tx, pool_cap, pool_min, per_wallet_max,
-         min_deposit, fee_bps, deposit_start, deposit_end, launch_after, launch_deadline, tranche_count, tranche_interval)
-       VALUES ($1,'mock',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         min_deposit, fee_bps, deposit_start, deposit_end, launch_after, launch_deadline, tranche_count, tranche_interval,
+         quote_symbol, quote_mint, quote_decimals, quote_program, quote_via_control, curve_reserves)
+       VALUES ($1,'mock',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        ON CONFLICT (narrative_id) DO NOTHING`,
       [
         p.narrativeId, address, vault, tx, p.poolCap.toString(), p.poolMin.toString(), p.perWalletMax.toString(),
         p.minDeposit.toString(), p.feeBps, p.depositStart, p.depositEnd, p.launchAfter, p.launchDeadline,
         p.trancheCount, p.trancheIntervalSec,
+        ...tokenColumns(p),
       ],
     );
     return { address, vault, tx };
@@ -101,12 +104,14 @@ export const mockAdapter: ChainAdapter = {
       const e = await lockedEscrow(tx, narrativeId);
       if (phaseFor(e) !== "launchable") throw new ChainError("NotLaunchable", "Escrow is not launchable right now");
       const total = big(e.total_deposited);
-      const b = launchBreakdown(total, Number(e.fee_bps));
+      const curve = curveOf(unitOfEscrow(e));
+      const b = launchBreakdown(total, Number(e.fee_bps), curve);
       if (b.budget <= 0n) throw new ChainError("PoolTooSmall", "Pool too small to cover fees and launch rent");
       if (b.tokens > (PUMP.realTokenReserves * MAX_CURVE_FILL_BPS) / 10_000n) {
         throw new ChainError("CurveOverfill", "Opening buy would fill too much of the bonding curve");
       }
-      const leftover = LAUNCH_RENT_RESERVE - SIM_LAUNCH_RENT;
+      // SOL pools pay the launch rent from their reserve; token pools borrow it from the cranker.
+      const leftover = curve.tokenPool ? 0n : LAUNCH_RENT_RESERVE - SIM_LAUNCH_RENT;
       const mint = fakeAddress("mint", narrativeId);
       const sig = fakeTx();
       // On-chain this becomes create_v2's `is_holder_reward` (not built in the program yet).

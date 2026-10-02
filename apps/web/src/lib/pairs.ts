@@ -8,17 +8,23 @@ export interface PairOption {
   name: string;
   mint: string;
   kind: "crypto" | "stock";
+  /** A bundled logo (public/pairs, scripts/pair-logos.mjs), the token metadata's image for pairs
+   *  pump.fun added after the snapshot, or null (the UI draws a monogram). */
+  logo: string | null;
 }
 
 export const SOL_MINT = "So11111111111111111111111111111111111111112";
-export const SOL_PAIR: PairOption = { symbol: "SOL", name: "Solana", mint: SOL_MINT, kind: "crypto" };
+const logo = (mint: string) => `/pairs/${mint}.webp`;
+export const SOL_PAIR: PairOption = { symbol: "SOL", name: "Solana", mint: SOL_MINT, kind: "crypto", logo: logo(SOL_MINT) };
 
-/** Pairs a real launch can use today. The escrow pools SOL; any other pair needs it to swap at
- *  launch, which is not built yet. Everything else is simulated. */
-export const LIVE_PAIRS = new Set<string>(["SOL"]);
+/** Pairs a pool can be opened in today (D-023): SOL, and USDC, pump.fun's whitelisted quote on
+ *  devnet and mainnet. The rest need each depositor's wallet to swap into the pair as it joins
+ *  (stage 3, mainnet only: tokenized stocks and wrapped coins don't exist on devnet). */
+export const POOL_PAIRS = new Set<string>(["SOL", "USDC"]);
+export const poolReady = (symbol: string) => POOL_PAIRS.has(symbol);
 
-const c = (symbol: string, name: string, mint: string): PairOption => ({ symbol, name, mint, kind: "crypto" });
-const s = (symbol: string, name: string, mint: string): PairOption => ({ symbol, name, mint, kind: "stock" });
+const c = (symbol: string, name: string, mint: string): PairOption => ({ symbol, name, mint, kind: "crypto", logo: logo(mint) });
+const s = (symbol: string, name: string, mint: string): PairOption => ({ symbol, name, mint, kind: "stock", logo: logo(mint) });
 
 /** Read from mainnet on 2026-10-02: SOL, the Global whitelist, then quote-control in its order. */
 export const PUMP_PAIRS_SNAPSHOT: PairOption[] = [

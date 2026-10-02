@@ -1,32 +1,49 @@
-import { formatSol, launchBreakdown, PUMP, pumpNetIn } from "@/lib/math";
+import { launchBreakdown, PUMP, pumpNetIn } from "@/lib/math";
+import { curveOf, withUnit, type PoolUnit } from "@/lib/units";
 import type { NarrativeDetail } from "@/lib/views";
 
 // pump.fun's bonding curve, drawn from the same constants the escrow uses (math.ts). It shows
 // where the community pool's single buy lands and that anyone after it pays more. No market
-// data: this is the curve itself, not a price feed.
+// data: this is the curve itself, not a price feed. Amounts are in the pool's currency (D-023).
 
 const VT = Number(PUMP.virtualTokenReserves);
-const VQ = Number(PUMP.virtualQuoteReserves);
 const REAL = Number(PUMP.realTokenReserves);
-/** Net lamports that buy out the whole curve (~85 SOL). */
-const X_MAX = (REAL * VQ) / (VT - REAL);
-/** Marginal price after `x` net lamports, in SOL per 1M tokens. */
-const price = (x: number) => (((VQ + x) * (VQ + x)) / (VQ * VT)) * 1e3;
+/** Coin tokens have 6 decimals, so 1M whole tokens is 1e12 base units. */
+const PER_MILLION = 1e12;
+
+/** The curve in a pool's currency: where it ends (the net quote that buys it out) and the
+ *  marginal price after `x` net base units, in whole units per 1M tokens. */
+function curveFor(unit: PoolUnit) {
+  const vq = Number(unit.curveReserves);
+  const scale = 10 ** unit.decimals;
+  return {
+    xMax: (REAL * vq) / (VT - REAL),
+    price: (x: number) => (((vq + x) * (vq + x)) / (vq * VT)) * (PER_MILLION / scale),
+    whole: (x: number) => x / scale,
+  };
+}
 
 function poolPoint(n: NarrativeDetail) {
   const e = n.escrow!;
-  const b = launchBreakdown(BigInt(e.totalDeposited), e.feeBps);
+  const b = launchBreakdown(BigInt(e.totalDeposited), e.feeBps, curveOf(e.unit));
   const net = Number(pumpNetIn(b.budget));
   return { net, tokens: b.tokens, budget: b.budget, pct: b.pctOfSupply };
 }
 
 export function CurveMeta({ n }: { n: NarrativeDetail }) {
   const p = poolPoint(n);
+  const { price } = curveFor(n.escrow!.unit);
   return <span className="num text-ink">{p.net > 0 ? `${(price(p.net) / price(0)).toFixed(2)}× start price after the pool` : "curve preview"}</span>;
 }
 
+/** Enough decimals to show a small price, few for a large one. */
+const fmtPrice = (v: number) => v.toFixed(v >= 100 ? 2 : v >= 1 ? 3 : 4);
+
 export function CurveChart({ n }: { n: NarrativeDetail }) {
   const p = poolPoint(n);
+  const unit = n.escrow!.unit;
+  const { xMax: X_MAX, price, whole } = curveFor(unit);
+  const sym = unit.symbol;
   const launched = Boolean(n.escrow?.launched);
   const W = 800;
   const H = 220;
@@ -42,7 +59,7 @@ export function CurveChart({ n }: { n: NarrativeDetail }) {
     until > 0
       ? `${poolSamples.map((s, i) => `${i ? "L" : "M"}${x(s).toFixed(1)},${y(price(s)).toFixed(1)}`).join(" ")} L${x(until).toFixed(1)},${H - P.b} L${x(0).toFixed(1)},${H - P.b} Z`
       : "";
-  const avg = p.tokens > 0n ? (Number(p.budget) / Number(p.tokens)) * 1e3 : 0;
+  const avg = p.tokens > 0n ? (Number(p.budget) / Number(p.tokens)) * (PER_MILLION / 10 ** unit.decimals) : 0;
 
   return (
     <div className="px-3 pb-2 pt-3">
@@ -66,9 +83,11 @@ export function CurveChart({ n }: { n: NarrativeDetail }) {
         )}
       </svg>
       <div className="mt-1 flex items-center justify-between text-[0.7rem] text-dim">
-        <span className="num">0 SOL</span>
-        <span>SOL bought into the curve → price per token rises</span>
-        <span className="num">{Math.round(X_MAX / 1e9)} SOL</span>
+        <span className="num">0 {sym}</span>
+        <span>{sym} bought into the curve → price per token rises</span>
+        <span className="num">
+          {Math.round(whole(X_MAX)).toLocaleString("en-US")} {sym}
+        </span>
       </div>
       <div className="mt-4 grid gap-px overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.06] sm:grid-cols-3">
         <div className="bg-[#0c0d10] px-4 py-3">
@@ -77,17 +96,17 @@ export function CurveChart({ n }: { n: NarrativeDetail }) {
         </div>
         <div className="bg-[#0c0d10] px-4 py-3">
           <div className="label">Everyone in the pool paid</div>
-          <div className="num mt-1 text-[1.05rem] font-semibold">{avg > 0 ? `${avg.toFixed(4)} SOL / 1M` : "-"}</div>
+          <div className="num mt-1 text-[1.05rem] font-semibold">{avg > 0 ? `${fmtPrice(avg)} ${sym} / 1M` : "-"}</div>
         </div>
         <div className="bg-[#0c0d10] px-4 py-3">
           <div className="label">Next buyer after the pool pays</div>
           <div className="num mt-1 text-[1.05rem] font-semibold text-warn">
-            {until > 0 ? `${price(until).toFixed(4)} SOL / 1M` : `${price(0).toFixed(4)} SOL / 1M`}
+            {fmtPrice(price(until > 0 ? until : 0))} {sym} / 1M
           </div>
         </div>
       </div>
       <p className="mt-3 text-[0.78rem] leading-relaxed text-dim">
-        The coin is created and the pool&apos;s {formatSol(p.budget)} SOL buy happens in the same transaction, so the pool gets the bottom of the
+        The coin is created and the pool&apos;s {withUnit(p.budget, unit)} buy happens in the same transaction, so the pool gets the bottom of the
         curve (green). Anyone buying after that starts further up.
       </p>
     </div>

@@ -82,10 +82,11 @@ async function upload(png: Buffer) {
   return (await (await fetch(`${BASE}/api/images`, { method: "POST", body: fd })).json()).path as string;
 }
 
-type Spec = { pitch: string; name: string; ticker: string; alt?: [string, string]; art: number; x?: string; voters: number; deposits?: number[] };
+/** `deposits` are whole units of the pair: SOL by default, or USDC (D-023, D-024). */
+type Spec = { pitch: string; name: string; ticker: string; alt?: [string, string]; art: number; x?: string; voters: number; deposits?: number[]; pair?: "SOL" | "USDC" };
 
 async function narrative(creator: W, s: Spec, images: string[]) {
-  const { id, slug } = await creator.post("/api/narratives", "create", { pitch: s.pitch, name: s.name, ticker: s.ticker, sourceUrl: s.x });
+  const { id, slug } = await creator.post("/api/narratives", "create", { pitch: s.pitch, name: s.name, ticker: s.ticker, sourceUrl: s.x, pair: s.pair ?? "SOL" });
   const sub = (w: W, field: any, value: string) => w.post(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field, value });
   if (s.alt) {
     await sub(crowd[1], "name", s.alt[0]);
@@ -93,7 +94,6 @@ async function narrative(creator: W, s: Spec, images: string[]) {
   }
   await sub(crowd[3], "image", images[s.art]);
   await sub(crowd[4], "image", images[(s.art + 5) % images.length]);
-  if (s.voters % 2 === 1) await sub(crowd[5], "pair", ["NVDAx", "WBTC", "TSLAx", "SPCX"][s.art % 4]);
   const d = await (await fetch(`${BASE}/api/n/${slug}`)).json();
   const id0 = (field: string, i = 0) => d.ballots[field].entries[i]?.id;
   const chatter = [
@@ -111,8 +111,6 @@ async function narrative(creator: W, s: Spec, images: string[]) {
     await v("name", id0("name", i % 4 === 0 && d.ballots.name.entries.length > 1 ? 1 : 0));
     await v("ticker", id0("ticker", i % 5 === 0 && d.ballots.ticker.entries.length > 1 ? 1 : 0));
     await v("image", id0("image", i % 3 === 0 ? 1 : 0));
-    // Pair entries are SOL, then the one a crowd member added (if any).
-    if (i % 2 === 0) await v("pair", id0("pair", i % 6 === 4 ? 1 : 0));
   }
   return { id, slug };
 }
@@ -126,11 +124,12 @@ async function waitStage(slug: string, stage: string) {
   throw new Error(`timeout ${slug} → ${stage}`);
 }
 
-async function deposits(id: string, amounts: number[]) {
+async function deposits(id: string, amounts: number[], pair: Spec["pair"] = "SOL") {
+  const scale = pair === "USDC" ? 1e6 : 1e9;
   for (const [i, a] of amounts.entries()) {
     await crowd[(i * 5 + 3) % crowd.length].post(`/api/narratives/${id}/deposit`, "deposit", {
       narrativeId: id,
-      amountLamports: BigInt(Math.round(a * 1e9)).toString(),
+      amountLamports: BigInt(Math.round(a * scale)).toString(),
       holderRewards: i % 3 !== 1,
     });
   }
@@ -144,7 +143,7 @@ const LIVE: Spec[] = [
 ];
 const POOLING: Spec[] = [
   { pitch: "A llama with laser eyes that only buys the dip. Community-built, no dev bags.", name: "Laser Llama", ticker: "LLAMA", alt: ["Lazer Llama", "LAZR"], art: 4, x: "https://x.com/laserllama", voters: 12, deposits: [2, 1.2, 0.5, 1, 2, 0.3, 1.8, 0.9, 1.1] },
-  { pitch: "Penguins don't panic sell. They just slide. The official coin of sliding.", name: "Pixel Penguin", ticker: "PENG", art: 5, voters: 8, deposits: [0.6, 1, 0.25] },
+  { pitch: "Penguins don't panic sell. They just slide. The official coin of sliding.", name: "Pixel Penguin", ticker: "PENG", art: 5, voters: 8, deposits: [2, 1.5, 0.75], pair: "USDC" },
   { pitch: "Toasters have been oppressed for decades. Time for the toaster revolution.", name: "Toaster Revolution", ticker: "TOAST", art: 6, voters: 6, deposits: [1, 0.5, 2, 1.5, 0.7] },
 ];
 const LAUNCHING: Spec[] = [
@@ -153,7 +152,7 @@ const LAUNCHING: Spec[] = [
 const VOTING: Spec[] = [
   { pitch: "Sloths have survived 64 million years by doing nothing. Diamond hands, literally.", name: "Sleepy Sloth", ticker: "SLOTH", alt: ["Slow Sloth", "SLOW"], art: 8, x: "https://x.com/sleepysloth", voters: 13 },
   { pitch: "A hamster running on a wheel powers an entire data center. We are all the hamster.", name: "Cyber Hamster", ticker: "HAMS", alt: ["Hamster Grid", "HGRID"], art: 9, voters: 9 },
-  { pitch: "Goats climb anything. Charts included.", name: "Galactic Goat", ticker: "GGOAT", art: 10, voters: 5 },
+  { pitch: "Goats climb anything. Charts included.", name: "Galactic Goat", ticker: "GGOAT", art: 10, voters: 5, pair: "USDC" },
   { pitch: "A dog that dives to the bottom of the ocean to find the actual bottom.", name: "Deep Sea Dog", ticker: "DSDOG", alt: ["Abyss Dog", "ABYSS"], art: 11, voters: 4 },
   { pitch: "Owls see in the dark. This one only trades at 3am.", name: "Night Owl", ticker: "HOOT", art: 0, voters: 2 },
 ];
@@ -178,7 +177,7 @@ async function main() {
   const thin = await narrative(crowd[7], { pitch: "A pool that never filled. Everyone gets their SOL back.", name: "Almost Coin", ticker: "ALMOST", art: 3, voters: 3 }, images);
   for (const l of live) {
     await waitStage(l.slug, "pooling");
-    await deposits(l.id, l.s.deposits!);
+    await deposits(l.id, l.s.deposits!, l.s.pair);
   }
   await waitStage(thin.slug, "pooling");
   await deposits(thin.id, [0.3, 0.2]);
@@ -191,7 +190,7 @@ async function main() {
   for (const [i, s] of POOLING.entries()) {
     const n = await narrative(crowd[(i * 5 + 2) % 24], s, images);
     await waitStage(n.slug, "pooling");
-    await deposits(n.id, s.deposits!);
+    await deposits(n.id, s.deposits!, s.pair);
   }
   await stop();
 
@@ -200,7 +199,7 @@ async function main() {
   for (const s of LAUNCHING) {
     const n = await narrative(crowd[11], s, images);
     await waitStage(n.slug, "pooling");
-    await deposits(n.id, s.deposits!);
+    await deposits(n.id, s.deposits!, s.pair);
     await waitStage(n.slug, "launching");
   }
   await stop();

@@ -63,7 +63,7 @@ await pic.setContent('<body style="margin:0;background:radial-gradient(circle at
 const png2 = await pic.screenshot({ type: "png" });
 await pic.close();
 
-async function createViaUI({ pitch, name, ticker, source, image }) {
+async function createViaUI({ pitch, name, ticker, source, image, pair }) {
   await page.goto(`${base}/create`, { waitUntil: "load" });
   if (image) {
     await page.setInputFiles('input[type="file"]', { name: "pic.png", mimeType: "image/png", buffer: image });
@@ -73,9 +73,21 @@ async function createViaUI({ pitch, name, ticker, source, image }) {
   await page.fill("#name", name);
   await page.fill("#ticker", ticker);
   if (source) await page.fill("#source", source);
+  if (pair) await pickPair(pair);
   await page.click('button[type="submit"]:has-text("Start narrative")');
   await page.waitForURL(/\/n\/[A-Za-z0-9]+$/, { timeout: 15_000 });
   return page.url();
+}
+
+/** Opens the pair picker on the create form and picks `symbol` by searching for it. */
+async function pickPair(symbol) {
+  await page.click("button#pair");
+  const dialog = page.locator('[role="dialog"][aria-label="Pick a pair"]');
+  await dialog.waitFor({ timeout: 3000 });
+  await dialog.locator('input[aria-label="Search pairs"]').fill(symbol);
+  await dialog.locator('[role="option"]', { hasText: symbol }).first().click();
+  await dialog.waitFor({ state: "detached", timeout: 3000 });
+  await page.locator("button#pair", { hasText: symbol }).waitFor({ timeout: 3000 });
 }
 
 async function waitText(text, timeout) {
@@ -102,6 +114,30 @@ await check("how-it-works tiles render (6 steps + 4 guarantees)", async () => {
 
 // ---- create A (with picture), then interact during voting --------------------------------------
 section = "create";
+await check("pair picker: pump.fun's pairs with logos, SOL and USDC open, stocks locked until mainnet", async () => {
+  await page.goto(`${base}/create`, { waitUntil: "load" });
+  await page.locator("button#pair", { hasText: "SOL" }).waitFor({ timeout: 5000 });
+  await page.click("button#pair");
+  const dialog = page.locator('[role="dialog"][aria-label="Pick a pair"]');
+  await dialog.waitFor({ timeout: 3000 });
+  const options = dialog.locator('[role="option"]');
+  if ((await options.count()) < 30) throw new Error(`only ${await options.count()} pairs listed`);
+  const logos = await dialog.locator('[role="option"] img[src^="/pairs/"]').count();
+  if (logos < 30) throw new Error(`only ${logos} logos`);
+  const broken = await dialog.locator('[role="option"] img').evaluateAll((imgs) => imgs.filter((i) => i.complete && i.naturalWidth === 0).length);
+  if (broken) throw new Error(`${broken} logos failed to load`);
+  const nvda = dialog.locator('[role="option"]', { hasText: "NVDAx" });
+  if ((await nvda.getAttribute("aria-disabled")) !== "true") throw new Error("NVDAx should be locked on this build");
+  // Playwright treats aria-disabled as disabled; force the click to prove it does nothing.
+  await nvda.click({ force: true });
+  if (!(await dialog.isVisible())) throw new Error("clicking a locked pair closed the picker");
+  await dialog.locator('button[role="tab"]', { hasText: "Stocks" }).click();
+  if (await dialog.locator('[role="option"]', { hasText: "USDC" }).count()) throw new Error("Stocks tab shows USDC");
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached", timeout: 3000 });
+  await pickPair("USDC");
+  await pickPair("SOL");
+});
 let urlA;
 await check("guest creates a narrative with picture and source", async () => {
   urlA = await createViaUI({
@@ -144,20 +180,10 @@ await check("vote on a ticker", async () => {
   await page.click('button[aria-label="Vote for $AUDOG"]');
   await toast(/Vote counted/);
 });
-await check("only name, ticker, image and pair ballots; no link or fee ballots", async () => {
-  await page.locator(".panel-head", { hasText: "Pair" }).first().waitFor({ timeout: 3000 });
-  if (await page.locator(".panel-head", { hasText: /X \/ Twitter|Telegram|Website|Creator fees/ }).count()) throw new Error("link or fee ballots are still shown");
-});
-await check("pair picker offers pump.fun's coins and stocks; add NVIDIA, vote SOL", async () => {
-  const picker = page.locator('select[aria-label="New Pair entry"]');
-  if (!(await picker.locator('option[value="TSLAx"]').count())) throw new Error("stocks missing from the pair picker");
-  if (await picker.locator('option[value="SOL"]').count()) throw new Error("SOL is already on the ballot but still offered");
-  await picker.selectOption("NVDAx");
-  await page.locator('form:has(select[aria-label="New Pair entry"]) button').click();
-  await toast(/Entry added/);
-  await page.locator('button[aria-label="Vote for NVDAx pair"]').waitFor({ timeout: 5000 });
-  await page.click('button[aria-label="Vote for SOL pair"]');
-  await toast(/Vote counted/);
+await check("only name, ticker and image ballots; the creator's pair is shown, not voted", async () => {
+  await page.locator(".panel-head", { hasText: "Image" }).first().waitFor({ timeout: 3000 });
+  if (await page.locator(".panel-head", { hasText: /^Pair|X \/ Twitter|Telegram|Website|Creator fees/ }).count()) throw new Error("pair, link or fee ballots are still shown");
+  await page.locator('h1 ~ span[title="Paired with Solana"]').first().waitFor({ timeout: 3000 });
 });
 await check("upload an image entry", async () => {
   const before = await page.locator('img[src^="/api/images/"]').count();
@@ -242,8 +268,8 @@ await shot("1-voting");
 // ---- create B (for the refund path) -------------------------------------------------------------
 section = "create (refund case)";
 let urlB;
-await check("second narrative created without a picture", async () => {
-  urlB = await createViaUI({ pitch: "QA coin that will not reach its pool minimum, to test refunds.", name: "Thin Coin", ticker: "THINQ" });
+await check("second narrative created without a picture, paired with USDC", async () => {
+  urlB = await createViaUI({ pitch: "QA coin that will not reach its pool minimum, to test refunds.", name: "Thin Coin", ticker: "THINQ", pair: "USDC" });
 });
 
 // ---- pool on A -----------------------------------------------------------------------------------
@@ -293,10 +319,11 @@ await check("lock hash verifies in the browser", async () => {
   await page.click('button:has-text("Verify in browser")');
   await waitText("Metadata, launch settings, winners and vote root hash to the lock hash", 8000);
 });
-await check("locked launch settings: pump.fun, SOL pair, voted fee wallet", async () => {
+await check("locked launch settings: pump.fun, SOL pair with its logo, voted holder rewards", async () => {
   const lock = page.locator("section", { hasText: "Locked metadata" });
   await lock.getByText("pump.fun", { exact: true }).waitFor({ timeout: 3000 });
-  await lock.getByText("SOL pair", { exact: true }).waitFor({ timeout: 3000 });
+  await lock.getByText("SOL", { exact: true }).waitFor({ timeout: 3000 });
+  await lock.locator('img[src^="/pairs/So111"]').waitFor({ timeout: 3000 });
   await lock.getByText("Voted by the pool", { exact: true }).waitFor({ timeout: 3000 });
 });
 await check("bonding curve chart shows where the pool buys", async () => {
@@ -319,8 +346,13 @@ await shot("2-pool");
 section = "refund case";
 await page.goto(urlB, { waitUntil: "load" });
 await check("pool opens on the second narrative", () => page.locator('button:has-text("Join the pool")').waitFor({ timeout: 60_000 }));
-await check("deposit 0.25 SOL (under the 1 SOL minimum)", async () => {
-  await page.click('button:text-is("0.25")');
+await check("USDC pool: amounts in USDC and the issuer-freeze warning", async () => {
+  await page.locator('input[aria-label="Amount in USDC"]').waitFor({ timeout: 3000 });
+  await waitText("1 USDC needed to launch", 3000);
+  await waitText("its issuer can freeze", 3000);
+});
+await check("deposit 0.5 USDC (under the 1 USDC minimum)", async () => {
+  await page.click('button:text-is("0.5")');
   await page.click('[role="radiogroup"][aria-label="Holder rewards"] [role="radio"]:text-is("Off")');
   await page.click('button:has-text("Join the pool")');
   await toast(/You're in the pool/);
@@ -350,7 +382,7 @@ section = "refund";
 await page.goto(urlB, { waitUntil: "load" });
 await check("under-minimum pool switches to refunds", () => waitText("Every depositor can take back 100%", 70_000));
 await check("refund 100% of the deposit", async () => {
-  const btn = page.locator("button", { hasText: /^Refund 0\.25 SOL/ });
+  const btn = page.locator("button", { hasText: /^Refund 0\.5 USDC/ });
   await btn.waitFor({ timeout: 10_000 });
   await btn.click();
   await toast(/Refunded in full/);

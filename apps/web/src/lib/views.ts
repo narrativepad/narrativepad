@@ -6,13 +6,16 @@ import { config } from "./config";
 import { big, date, q, q1 } from "./db";
 import { proRata, unlockedTranches, vested } from "./math";
 import { FIELDS, type Field } from "./messages";
-import type { PairOption } from "./pairs";
-import { pumpPairs } from "./pumpPairs";
+import { knownPair, type PairOption } from "./pairs";
 import { entries, winners, type Entry } from "./narratives";
 import { phaseOf, stageFromPhase, type Phase, type Stage } from "./phase";
+import { unitOfEscrow } from "./pools";
+import type { PoolUnit, Unit } from "./units";
 
 
 export interface EscrowView {
+  /** What the pool holds (D-023). Every amount below except tokens is in its base units. */
+  unit: PoolUnit;
   /** On-chain addresses; null in preview mode (nothing is on-chain yet). */
   address: string | null;
   addressUrl: string | null;
@@ -41,7 +44,7 @@ export interface EscrowView {
   tokensClaimed: string;
   baseLeftover: string;
   unlocked: number;
-  /** Lamports behind each side of the holder-rewards vote (D-019). */
+  /** Pool currency behind each side of the holder-rewards vote (D-019). */
   holderVotesOn: string;
   holderVotesOff: string;
   /** Settled at launch; null before. */
@@ -66,14 +69,15 @@ export interface NarrativeCard {
   title: string;
   ticker: string | null;
   image: string | null;
-  /** Locked pair, or the one leading the vote. Null on narratives from before D-018. */
-  pair: string | null;
+  /** The creator's pair (D-024), an older narrative's locked or leading one, or null before D-018. */
+  pair: PairOption | null;
   createdAt: string;
   voteEndsAt: string;
   creator: string;
   votes: number;
   escrow: Pick<
     EscrowView,
+    | "unit"
     | "phase"
     | "totalDeposited"
     | "poolCap"
@@ -91,15 +95,20 @@ export interface NarrativeCard {
   /** Normalised 0..1 cumulative pool size over time (sparkline). */
   flow: number[] | null;
   comments: number;
-  /** Activity in the last TREND_MINUTES, for the Trending tab. */
+  /** Activity in the last TREND_MINUTES, for the Trending tab. `lamports` is in the pool's unit. */
   trend: { votes: number; comments: number; deposits: number; lamports: string; score: number };
 }
 
 export const TREND_MINUTES = 15;
 
-/** Momentum: deposits weigh most, then votes, then chat. */
-const trendScore = (votes: number, comments: number, deposits: number, lamports: bigint) =>
-  votes + comments * 0.5 + deposits * 3 + Number(lamports) / 5e8;
+/** Momentum: deposits weigh most, then votes, then chat. SOL pools also weigh the SOL added;
+ *  other currencies have no common price with it, so only their deposit count counts. */
+const trendScore = (votes: number, comments: number, deposits: number, lamports: bigint, unit: Unit) =>
+  votes + comments * 0.5 + deposits * 3 + (unit.symbol === "SOL" ? Number(lamports) / 5e8 : 0);
+
+/** A pair symbol as the UI shows it: pump.fun's name and logo when known. */
+export const pairInfo = (symbol: string | null | undefined): PairOption | null =>
+  symbol ? (knownPair(symbol) ?? { symbol, name: symbol, mint: "", kind: "crypto", logo: null }) : null;
 
 export interface ActivityItem {
   kind: "vote" | "submit" | "deposit" | "claim" | "refund";
@@ -107,6 +116,8 @@ export interface ActivityItem {
   field: string | null;
   value: string | null;
   amount: string | null;
+  /** The unit of `amount` for deposits and refunds (claims are in coin tokens). */
+  unit: Unit | null;
   at: string;
 }
 
@@ -135,6 +146,7 @@ function escrowView(e: any): EscrowView {
   // Simulated escrows have placeholder addresses, so only real ones are shown.
   const onchain = e.chain === "solana";
   return {
+    unit: unitOfEscrow(e),
     address: onchain ? e.address : null,
     addressUrl: onchain ? explorer("address", e.address) : null,
     mint: onchain ? (e.mint ?? null) : null,
@@ -186,7 +198,7 @@ function flowSpark(amounts: bigint[], points = 24): number[] | null {
 
 export async function feed(limit = 120): Promise<NarrativeCard[]> {
   const rows = await q<any>(
-    `SELECT n.*, l.name AS l_name, l.symbol AS l_symbol, l.image AS l_image, l.launch->>'pair' AS l_pair,
+    `SELECT n.*, n.pair AS n_pair, l.name AS l_name, l.symbol AS l_symbol, l.image AS l_image, l.launch->>'pair' AS l_pair,
             (SELECT COUNT(*)::int FROM votes v WHERE v.narrative_id = n.id) AS vote_count,
             (SELECT COUNT(*)::int FROM comments c WHERE c.narrative_id = n.id AND NOT c.hidden) AS comment_count,
             (SELECT COUNT(*)::int FROM votes v WHERE v.narrative_id = n.id AND v.created_at > now() - make_interval(mins => ${TREND_MINUTES})) AS t_votes,
@@ -233,6 +245,7 @@ export async function feed(limit = 120): Promise<NarrativeCard[]> {
     const e = r.e_id ? escrowView(r) : null;
     const l = lead.get(r.id) ?? {};
     const stage: Stage = e ? stageFromPhase(e.phase) : (r.stage as Stage);
+    const unit = e?.unit ?? unitOfEscrow({});
     return {
       id: r.id,
       slug: r.slug,
@@ -241,12 +254,13 @@ export async function feed(limit = 120): Promise<NarrativeCard[]> {
       title: r.l_name ?? l.name ?? "Untitled narrative",
       ticker: r.l_symbol ?? l.ticker ?? null,
       image: r.l_image ?? l.image ?? null,
-      pair: r.l_pair ?? l.pair ?? null,
+      pair: pairInfo(r.n_pair ?? r.l_pair ?? l.pair),
       createdAt: date(r.created_at).toISOString(),
       voteEndsAt: date(r.vote_ends_at).toISOString(),
       creator: r.creator_wallet,
       votes: Number(r.vote_count),
       escrow: e && {
+        unit: e.unit,
         phase: e.phase,
         totalDeposited: e.totalDeposited,
         poolCap: e.poolCap,
@@ -268,7 +282,7 @@ export async function feed(limit = 120): Promise<NarrativeCard[]> {
         comments: Number(r.t_comments),
         deposits: Number(r.t_deposits),
         lamports: big(r.t_lamports).toString(),
-        score: trendScore(Number(r.t_votes), Number(r.t_comments), Number(r.t_deposits), big(r.t_lamports)),
+        score: trendScore(Number(r.t_votes), Number(r.t_comments), Number(r.t_deposits), big(r.t_lamports), unit),
       },
     };
   });
@@ -291,18 +305,28 @@ const ACTIVITY_SQL = (where: string) => `
   UNION ALL
   (SELECT 'refund', narrative_id, wallet, NULL, NULL, amount::text, created_at FROM refunds ${where})`;
 
-const toActivity = (r: any): ActivityItem => ({
+const toActivity = (r: any, units: Map<string, Unit>): ActivityItem => ({
   kind: r.kind,
   wallet: r.wallet,
   field: r.field ?? null,
   value: r.value ?? null,
   amount: r.amount ?? null,
+  unit: r.kind === "deposit" || r.kind === "refund" ? (units.get(r.narrative_id) ?? unitOfEscrow({})) : null,
   at: date(r.at).toISOString(),
 });
 
+/** Each escrow's pool unit, for activity rows. */
+async function unitsFor(narrativeIds: string[]): Promise<Map<string, Unit>> {
+  const ids = [...new Set(narrativeIds)];
+  if (!ids.length) return new Map();
+  const rows = await q<any>(`SELECT narrative_id, quote_symbol, quote_mint, quote_decimals FROM escrows WHERE narrative_id = ANY($1)`, [ids]);
+  return new Map(rows.map((e) => [e.narrative_id, unitOfEscrow(e)]));
+}
+
 async function activity(narrativeId: string, limit = 60): Promise<ActivityItem[]> {
   const rows = await q<any>(`${ACTIVITY_SQL("WHERE narrative_id = $1")} ORDER BY at DESC LIMIT $2`, [narrativeId, limit]);
-  return rows.map(toActivity);
+  const units = await unitsFor([narrativeId]);
+  return rows.map((r) => toActivity(r, units));
 }
 
 /** Latest events across all narratives (the board's ticker tape). */
@@ -321,7 +345,8 @@ export async function globalActivity(limit = 30): Promise<GlobalActivityItem[]> 
       ORDER BY a.at DESC`,
     [limit],
   );
-  return rows.map((r) => ({ ...toActivity(r), slug: r.slug, title: String(r.title).slice(0, 40) }));
+  const units = await unitsFor(rows.map((r) => r.narrative_id));
+  return rows.map((r) => ({ ...toActivity(r, units), slug: r.slug, title: String(r.title).slice(0, 40) }));
 }
 
 // ---- narrative page -------------------------------------------------------------------------
@@ -340,6 +365,8 @@ export interface NarrativeDetail {
   title: string;
   ticker: string | null;
   image: string | null;
+  /** The creator's pair (D-024); older narratives show their locked or leading pair. */
+  pair: PairOption | null;
   ballots: Record<Field, { entries: (Entry & { isTeam: boolean })[]; leaderId: string | null; total: number }>;
   totalVotes: number;
   voters: number;
@@ -370,8 +397,6 @@ export interface NarrativeDetail {
   /** One row per depositing wallet, biggest first. Tokens only once launched. */
   holders: { wallet: string; amount: string; sharePct: number; tokens: string | null; refunded: boolean; isTeam: boolean }[];
   preview: boolean;
-  /** pump.fun's current pairs, for the pair ballot. Empty once voting is over. */
-  pairOptions: PairOption[];
 }
 
 export interface CommentView {
@@ -411,6 +436,7 @@ export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | n
   const escrow = e ? escrowView(e) : null;
   const stage: Stage = escrow ? stageFromPhase(escrow.phase) : (n.stage as Stage);
   const links = lock ? (typeof lock.links === "string" ? JSON.parse(lock.links) : lock.links) : null;
+  const launch = lock ? (typeof lock.launch === "string" ? JSON.parse(lock.launch) : (lock.launch ?? null)) : null;
   let running = 0n;
 
   return {
@@ -427,6 +453,7 @@ export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | n
     title: lock?.name ?? lead.name?.value ?? "Untitled narrative",
     ticker: lock?.symbol ?? lead.ticker?.value ?? null,
     image: lock?.image ?? lead.image?.value ?? null,
+    pair: pairInfo(n.pair ?? launch?.pair ?? lead.pair?.value),
     ballots,
     totalVotes: Number(voteCount?.c ?? 0),
     voters: Number(voterCount?.c ?? 0),
@@ -436,7 +463,7 @@ export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | n
       symbol: lock.symbol,
       image: lock.image,
       links,
-      launch: typeof lock.launch === "string" ? JSON.parse(lock.launch) : (lock.launch ?? null),
+      launch,
       metadataUri: lock.metadata_uri,
       metadataJson: lock.metadata_json,
       detailsHash: lock.details_hash,
@@ -467,7 +494,6 @@ export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | n
       isTeam: team.has(r.wallet),
     })),
     preview: n.chain === "mock",
-    pairOptions: stage === "voting" ? await pumpPairs({ wait: false }) : [],
   };
 }
 
@@ -511,6 +537,7 @@ function positionFrom(e: any, r: any) {
   const total = big(e.total_deposited);
   const amount = big(r.amount);
   const count = Number(e.tranche_count);
+  const unit = unitOfEscrow(e);
   let entitlement = 0n;
   let claimable = 0n;
   let unlocked = 0;
@@ -522,6 +549,8 @@ function positionFrom(e: any, r: any) {
     leftover = r.leftover_paid ? 0n : proRata(big(e.base_leftover), amount, total);
   }
   return {
+    /** `deposited` and `leftover` are in this unit (D-023). */
+    unit,
     deposited: amount.toString(),
     sharePct: total > 0n ? Number((amount * 1_000_000n) / total) / 10_000 : 0,
     entitlement: entitlement.toString(),
@@ -596,12 +625,21 @@ export async function profile(wallet: string) {
       [wallet],
     ),
     q<any>(
-      `SELECT r.*, n.slug, l.name, l.symbol FROM receipts r JOIN narratives n ON n.id = r.narrative_id
-         LEFT JOIN locks l ON l.narrative_id = r.narrative_id WHERE r.wallet = $1 ORDER BY n.created_at DESC`,
+      `SELECT r.*, n.slug, l.name, l.symbol, e.quote_symbol, e.quote_mint, e.quote_decimals FROM receipts r JOIN narratives n ON n.id = r.narrative_id
+         LEFT JOIN locks l ON l.narrative_id = r.narrative_id LEFT JOIN escrows e ON e.narrative_id = r.narrative_id
+        WHERE r.wallet = $1 ORDER BY n.created_at DESC`,
       [wallet],
     ),
-    q<any>(`SELECT c.*, n.slug FROM claims c JOIN narratives n ON n.id = c.narrative_id WHERE c.wallet = $1 ORDER BY c.created_at DESC`, [wallet]),
-    q<any>(`SELECT f.*, n.slug FROM refunds f JOIN narratives n ON n.id = f.narrative_id WHERE f.wallet = $1 ORDER BY f.created_at DESC`, [wallet]),
+    q<any>(
+      `SELECT c.*, n.slug, e.quote_symbol, e.quote_mint, e.quote_decimals FROM claims c JOIN narratives n ON n.id = c.narrative_id
+         LEFT JOIN escrows e ON e.narrative_id = c.narrative_id WHERE c.wallet = $1 ORDER BY c.created_at DESC`,
+      [wallet],
+    ),
+    q<any>(
+      `SELECT f.*, n.slug, e.quote_symbol, e.quote_mint, e.quote_decimals FROM refunds f JOIN narratives n ON n.id = f.narrative_id
+         LEFT JOIN escrows e ON e.narrative_id = f.narrative_id WHERE f.wallet = $1 ORDER BY f.created_at DESC`,
+      [wallet],
+    ),
   ]);
   const board = await leaderboard();
   return {
@@ -614,11 +652,18 @@ export async function profile(wallet: string) {
       name: r.name,
       symbol: r.symbol,
       amount: big(r.amount).toString(),
+      unit: unitOfEscrow(r) as Unit,
       tokensClaimed: big(r.tokens_claimed).toString(),
       refunded: Boolean(r.refunded),
     })),
-    claims: claims.map((c) => ({ slug: c.slug, tokens: big(c.tokens).toString(), lamports: big(c.lamports).toString(), at: date(c.created_at).toISOString() })),
-    refunds: refunds.map((f) => ({ slug: f.slug, amount: big(f.amount).toString(), at: date(f.created_at).toISOString() })),
+    claims: claims.map((c) => ({
+      slug: c.slug,
+      tokens: big(c.tokens).toString(),
+      lamports: big(c.lamports).toString(),
+      unit: unitOfEscrow(c) as Unit,
+      at: date(c.created_at).toISOString(),
+    })),
+    refunds: refunds.map((f) => ({ slug: f.slug, amount: big(f.amount).toString(), unit: unitOfEscrow(f) as Unit, at: date(f.created_at).toISOString() })),
     rank: {
       creator: board.creators.findIndex((c) => c.wallet === wallet) + 1 || null,
       voter: board.voters.findIndex((v) => v.wallet === wallet) + 1 || null,
@@ -630,7 +675,8 @@ export async function profile(wallet: string) {
 
 /**
  * Reputation from real activity: creators rank by SOL their narratives pooled (launches break
- * ties); voters rank by how often they picked the entry that won.
+ * ties); voters rank by how often they picked the entry that won. Token pools (D-023) have no
+ * common price with SOL, so "raised" counts SOL pools and pools rank by how full they are.
  */
 export async function leaderboard() {
   const [creators, voters, pools] = await Promise.all([
@@ -638,11 +684,11 @@ export async function leaderboard() {
       `SELECT n.creator_wallet AS wallet,
               COUNT(*)::int AS narratives,
               COUNT(e.narrative_id) FILTER (WHERE e.launched)::int AS launches,
-              COALESCE(SUM(e.total_deposited - e.total_refunded), 0)::text AS raised
+              COALESCE(SUM(e.total_deposited - e.total_refunded) FILTER (WHERE e.quote_mint IS NULL), 0)::text AS raised
          FROM narratives n LEFT JOIN escrows e ON e.narrative_id = n.id
         WHERE NOT n.hidden
         GROUP BY n.creator_wallet
-        ORDER BY COALESCE(SUM(e.total_deposited - e.total_refunded), 0) DESC, launches DESC, narratives DESC
+        ORDER BY COALESCE(SUM(e.total_deposited - e.total_refunded) FILTER (WHERE e.quote_mint IS NULL), 0) DESC, launches DESC, narratives DESC
         LIMIT 50`,
     ),
     q<any>(
@@ -658,7 +704,7 @@ export async function leaderboard() {
   ]);
   const topPools = pools
     .filter((n) => n.escrow && n.stage !== "refunding")
-    .sort((a, b) => Number(BigInt(b.escrow!.totalDeposited) - BigInt(a.escrow!.totalDeposited)))
+    .sort((a, b) => fill(b) - fill(a) || b.escrow!.depositorCount - a.escrow!.depositorCount)
     .slice(0, 50);
   return {
     creators: creators.map((c) => ({ wallet: c.wallet, narratives: Number(c.narratives), launches: Number(c.launches), raised: String(c.raised) })),
@@ -667,10 +713,13 @@ export async function leaderboard() {
   };
 }
 
+/** How full a pool is, in basis points of its cap; comparable across currencies. */
+const fill = (n: NarrativeCard) => Number((BigInt(n.escrow!.totalDeposited) * 10_000n) / (BigInt(n.escrow!.poolCap) || 1n));
+
 export async function stats() {
   const r = await q1<any>(
     `SELECT (SELECT COUNT(*)::int FROM narratives WHERE NOT hidden) AS narratives,
-            (SELECT COALESCE(SUM(total_deposited - total_refunded), 0)::text FROM escrows) AS pooled,
+            (SELECT COALESCE(SUM(total_deposited - total_refunded), 0)::text FROM escrows WHERE quote_mint IS NULL) AS pooled,
             (SELECT COUNT(*)::int FROM escrows WHERE launched) AS launched,
             (SELECT COUNT(DISTINCT voter_wallet)::int FROM votes) AS voters,
             (SELECT COUNT(*)::int FROM votes) AS votes`,

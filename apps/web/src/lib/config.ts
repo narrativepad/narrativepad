@@ -8,8 +8,23 @@ const num = (key: string, fallback: number): number => {
   return v;
 };
 
-const lamports = (key: string, fallbackSol: number): bigint =>
-  BigInt(Math.round(num(key, fallbackSol) * 1e9));
+/** A whole-unit env value (e.g. "0.5") in base units of a currency with `decimals`. */
+const units = (key: string, fallback: number, decimals: number): bigint => BigInt(Math.round(num(key, fallback) * 10 ** decimals));
+
+export interface PoolLimits {
+  poolCap: bigint;
+  poolMin: bigint;
+  perWalletMax: bigint;
+  minDeposit: bigint;
+}
+
+/** Each pool currency's limits, in its base units (D-023). */
+const limits = (sym: string, decimals: number, d: { cap: number; min: number; perWallet: number; minDeposit: number }): PoolLimits => ({
+  poolCap: units(`POOL_CAP_${sym}`, d.cap, decimals),
+  poolMin: units(`POOL_MIN_${sym}`, d.min, decimals),
+  perWalletMax: units(`PER_WALLET_MAX_${sym}`, d.perWallet, decimals),
+  minDeposit: units(`MIN_DEPOSIT_${sym}`, d.minDeposit, decimals),
+});
 
 export type ChainKind = "mock" | "solana";
 
@@ -27,10 +42,12 @@ export const config = {
   launchWindowSec: num("LAUNCH_WINDOW_SEC", 1800),
   trancheCount: num("TRANCHE_COUNT", 5),
   trancheIntervalSec: num("TRANCHE_INTERVAL_SEC", 300),
-  poolCap: lamports("POOL_CAP_SOL", 20),
-  poolMin: lamports("POOL_MIN_SOL", 1),
-  perWalletMax: lamports("PER_WALLET_MAX_SOL", 2),
-  minDeposit: lamports("MIN_DEPOSIT_SOL", 0.05),
+  pools: {
+    SOL: limits("SOL", 9, { cap: 20, min: 1, perWallet: 2, minDeposit: 0.05 }),
+    // pump's devnet USDC curve starts with 4.292 USDC of virtual reserves (mainnet: 4,292), so the
+    // escrow's 90% fill limit stops a devnet pool at about 8.5 USDC. These defaults fit devnet.
+    USDC: limits("USDC", 6, { cap: 8, min: 1, perWallet: 4, minDeposit: 0.5 }),
+  } satisfies Record<string, PoolLimits>,
   feeBps: num("FEE_BPS", 100),
   teamWallets: new Set(
     (process.env.TEAM_WALLETS ?? "").split(",").map((s) => s.trim()).filter(Boolean),

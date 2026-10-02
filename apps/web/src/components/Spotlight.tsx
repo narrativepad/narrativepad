@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { formatSol } from "@/lib/math";
+import { toWhole, withUnit } from "@/lib/units";
 import type { NarrativeCard } from "@/lib/views";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { Coin, coinTint, Icon, ProgressBar, STAGE } from "./bits";
@@ -53,8 +53,8 @@ export function Spotlight({ n }: { n: NarrativeCard }) {
             </div>
             <div className="text-right">
               <div className="num text-[1.15rem] font-semibold">
-                <AnimatedNumber value={Number(total) / 1e9} format="sol" />{" "}
-                <span className="text-[0.8rem] font-normal text-dim">/ {formatSol(BigInt(e.poolCap))} SOL</span>
+                <AnimatedNumber value={toWhole(total, e.unit)} format="sol" />{" "}
+                <span className="text-[0.8rem] font-normal text-dim">/ {withUnit(e.poolCap, e.unit)}</span>
               </div>
               <div className="text-[0.75rem] text-dim">{e.depositorCount === 0 ? "nobody in yet" : `${e.depositorCount} in the pool`}</div>
             </div>

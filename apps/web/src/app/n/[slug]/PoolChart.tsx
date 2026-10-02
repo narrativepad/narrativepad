@@ -1,11 +1,11 @@
-import { formatSol } from "@/lib/math";
+import { formatAmount, toWhole, withUnit } from "@/lib/units";
 import type { NarrativeDetail } from "@/lib/views";
 
 export function PoolFlowMeta({ n }: { n: NarrativeDetail }) {
   const e = n.escrow!;
   return (
     <span className="num text-ink">
-      {formatSol(BigInt(e.totalDeposited))} <span className="text-dim">/ {formatSol(BigInt(e.poolCap))} SOL</span>
+      {formatAmount(BigInt(e.totalDeposited), e.unit)} <span className="text-dim">/ {withUnit(e.poolCap, e.unit)}</span>
     </span>
   );
 }
@@ -18,9 +18,9 @@ export function PoolFlow({ n }: { n: NarrativeDetail }) {
   const P = { l: 8, r: 8, t: 14, b: 22 };
   const start = Date.parse(e.depositStart);
   const end = Math.max(Date.parse(e.depositEnd), ...n.flow.map((f) => f.t), start + 1);
-  const cap = Number(BigInt(e.poolCap)) / 1e9;
-  const min = Number(BigInt(e.poolMin)) / 1e9;
-  const total = Number(BigInt(e.totalDeposited)) / 1e9;
+  const cap = toWhole(e.poolCap, e.unit);
+  const min = toWhole(e.poolMin, e.unit);
+  const total = toWhole(e.totalDeposited, e.unit);
   const top = Math.max(cap, total) || 1;
   const x = (t: number) => P.l + ((t - start) / (end - start)) * (W - P.l - P.r);
   const y = (v: number) => P.t + (1 - v / top) * (H - P.t - P.b);
@@ -28,7 +28,7 @@ export function PoolFlow({ n }: { n: NarrativeDetail }) {
   const now = Math.min(Date.now(), end);
   const pts: [number, number][] = [[start, 0]];
   for (const f of n.flow) {
-    const v = Number(BigInt(f.total)) / 1e9;
+    const v = toWhole(f.total, e.unit);
     pts.push([f.t, pts[pts.length - 1][1]], [f.t, v]);
   }
   pts.push([now, pts[pts.length - 1][1]]);
@@ -38,7 +38,7 @@ export function PoolFlow({ n }: { n: NarrativeDetail }) {
 
   return (
     <div className="px-3 pb-2 pt-3">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-52 w-full 2xl:h-60" preserveAspectRatio="none" role="img" aria-label="Cumulative SOL in the pool over time">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-52 w-full 2xl:h-60" preserveAspectRatio="none" role="img" aria-label={`Cumulative ${e.unit.symbol} in the pool over time`}>
         <defs>
           <linearGradient id="flow-fill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.32" />

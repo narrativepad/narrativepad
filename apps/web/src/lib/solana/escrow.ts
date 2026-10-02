@@ -404,6 +404,15 @@ export function pumpFeesFromGlobal(data: Uint8Array): PumpFees {
   return { feeRecipient: new PublicKey(data.subarray(41, 73)), buybackRecipient: new PublicKey(data.subarray(741, 773)) };
 }
 
+/** pump's starting virtual quote reserves for a new curve: `initial_virtual_sol_reserves` (byte 81)
+ *  for SOL, `initial_virtual_quote_reserves` (byte 1005) for its whitelisted quote (USDC). For
+ *  estimates only; the escrow reads the real curve at launch. */
+export function pumpCurveReserves(globalData: Uint8Array, tokenPool: boolean): bigint {
+  if (globalData.length < 1013) throw new Error("unexpected pump Global layout");
+  const at = tokenPool ? 1005 : 81;
+  return new DataView(globalData.buffer, globalData.byteOffset).getBigUint64(at, true);
+}
+
 /** pump's `Global.is_holder_reward_enabled` (byte 1086); off on devnet today. */
 export const pumpHolderRewardsEnabled = (globalData: Uint8Array) => globalData.length > 1086 && globalData[1086] !== 0;
 
@@ -677,5 +686,7 @@ const ERRORS = [
   "NotLaunchable", "NotRefundable", "NotLaunched", "NothingToClaim", "InvalidAccount", "InvalidProgram",
   "InvalidLaunchPayer", "InvalidBondingCurve", "CurveOverfill", "PoolTooSmall", "LaunchOverspent", "LaunchUnderfilled",
   "NothingToDistribute", "ClaimsOutstanding", "NotDust", "MathOverflow",
+  // D-023 token pools
+  "TokenPool", "NotATokenPool", "InvalidQuoteMint", "TransferAmountMismatch",
 ];
 export const programErrorName = (code: number) => ERRORS[code - 6000] ?? null;

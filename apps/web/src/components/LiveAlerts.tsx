@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { setAlertsMuted, useAlertsMuted } from "@/lib/client/local";
 import { useIdentity } from "@/lib/client/useSigned";
-import { formatSol } from "@/lib/math";
 import { displayName } from "@/lib/names";
+import { SOL_UNIT, withUnit, type Unit } from "@/lib/units";
 import type { NarrativeCard } from "@/lib/views";
 import { Avatar, Coin } from "./bits";
 
-type Meta = Pick<NarrativeCard, "slug" | "title" | "ticker" | "image">;
+type Meta = Pick<NarrativeCard, "slug" | "title" | "ticker" | "image"> & { unit: Unit };
 type Alert = { id: number; meta: Meta; wallet?: string; text: React.ReactNode };
 
 const KINDS = new Set(["deposit", "created", "launched"]);
@@ -30,7 +30,7 @@ export function LiveAlerts() {
       (loading ??= fetch("/api/narratives")
         .then((r) => r.json())
         .then((d: { narratives: NarrativeCard[] }) => {
-          for (const n of d.narratives) known.set(n.id, { slug: n.slug, title: n.title, ticker: n.ticker, image: n.image });
+          for (const n of d.narratives) known.set(n.id, { slug: n.slug, title: n.title, ticker: n.ticker, image: n.image, unit: n.escrow?.unit ?? SOL_UNIT });
         })
         .catch(() => {})
         .finally(() => {
@@ -53,8 +53,14 @@ export function LiveAlerts() {
       const text =
         ev.kind === "deposit" ? (
           <>
-            joined <b className="font-semibold text-ink">{coin}</b> with{" "}
-            <b className="num font-semibold text-accent">{formatSol(BigInt(ev.amount ?? "0"))} SOL</b>
+            joined <b className="font-semibold text-ink">{coin}</b>
+            {/* On-chain deposits arrive through sync without an amount. */}
+            {ev.amount && (
+              <>
+                {" "}
+                with <b className="num font-semibold text-accent">{withUnit(ev.amount, meta.unit)}</b>
+              </>
+            )}
           </>
         ) : ev.kind === "created" ? (
           <>

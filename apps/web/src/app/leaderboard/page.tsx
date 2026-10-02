@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Coin, Icon, StageBadge, Who } from "@/components/bits";
 import { formatSol } from "@/lib/math";
+import { formatAmount } from "@/lib/units";
 import { leaderboard } from "@/lib/views";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +60,7 @@ export default async function LeaderboardPage() {
                     </span>
                     <StageBadge stage={n.stage} />
                     <span className="num w-24 text-right text-sm font-semibold text-accent">
-                      {formatSol(BigInt(n.escrow!.totalDeposited), 2)} <span className="text-xs font-normal text-dim">SOL</span>
+                      {formatAmount(BigInt(n.escrow!.totalDeposited), n.escrow!.unit, 2)} <span className="text-xs font-normal text-dim">{n.escrow!.unit.symbol}</span>
                     </span>
                   </Link>
                 </li>

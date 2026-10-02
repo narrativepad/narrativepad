@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
-import { formatSol } from "@/lib/math";
+import { withUnit } from "@/lib/units";
 import { narrativeBySlug } from "@/lib/views";
 
 export const runtime = "nodejs";
@@ -70,7 +70,7 @@ export default async function OG({ params }: { params: Promise<{ slug: string }>
         </div>
         <div style={{ display: "flex", gap: 48, fontSize: 28, color: "#a3a8b0" }}>
           <div style={{ display: "flex" }}>{n ? `${n.totalVotes} votes` : ""}</div>
-          {n?.escrow ? <div style={{ display: "flex" }}>{`${formatSol(BigInt(n.escrow.totalDeposited))} SOL pooled`}</div> : null}
+          {n?.escrow ? <div style={{ display: "flex" }}>{`${withUnit(n.escrow.totalDeposited, n.escrow.unit)} pooled`}</div> : null}
           <div style={{ display: "flex", marginLeft: "auto", color: "#ffd032" }}>the crowd builds the coin</div>
         </div>
       </div>

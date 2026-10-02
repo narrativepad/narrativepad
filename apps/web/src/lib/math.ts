@@ -39,20 +39,29 @@ export const curveTokensOut = (netIn: bigint, vt: bigint, vq: bigint) => mulDivF
 /** What pump's SDK charges: net = (gross - 1) * 10000 / 10125. */
 export const pumpNetIn = (gross: bigint) => (gross <= 0n ? 0n : mulDivFloor(gross - 1n, BPS, BPS + PUMP.feeBps));
 
-export function quoteOpeningBuy(grossBudget: bigint) {
-  const tokens = curveTokensOut(pumpNetIn(grossBudget), PUMP.virtualTokenReserves, PUMP.virtualQuoteReserves);
+/** A launch curve: pump's starting virtual reserves in the pool's currency (SOL by default), and
+ *  whether the pool is a token pool (D-023), which spends everything after the fee. */
+export interface Curve {
+  virtualQuoteReserves: bigint;
+  tokenPool: boolean;
+}
+const SOL_CURVE: Curve = { virtualQuoteReserves: PUMP.virtualQuoteReserves, tokenPool: false };
+
+export function quoteOpeningBuy(grossBudget: bigint, curve: Curve = SOL_CURVE) {
+  const tokens = curveTokensOut(pumpNetIn(grossBudget), PUMP.virtualTokenReserves, curve.virtualQuoteReserves);
   const capped = tokens > PUMP.realTokenReserves ? PUMP.realTokenReserves : tokens;
   const pctOfSupply = Number((capped * 10_000n) / PUMP.totalSupply) / 100;
   const avgPriceLamportsPerToken = capped === 0n ? 0 : Number(grossBudget) / Number(capped);
   return { tokens: capped, pctOfSupply, avgPriceLamportsPerToken };
 }
 
-/** Breakdown of a pool at launch, as `launch` computes it on-chain. */
-export function launchBreakdown(total: bigint, feeBps: number) {
+/** Breakdown of a pool at launch, as `launch` computes it on-chain. Token pools borrow the
+ *  launch rent from the cranker, so they keep no reserve. */
+export function launchBreakdown(total: bigint, feeBps: number, curve: Curve = SOL_CURVE) {
   const platformFee = bpsOf(total, feeBps);
   const afterFee = total - platformFee;
-  const budget = afterFee > LAUNCH_RENT_RESERVE ? afterFee - LAUNCH_RENT_RESERVE : 0n;
-  return { platformFee, budget, reserve: afterFee - budget, ...quoteOpeningBuy(budget) };
+  const budget = curve.tokenPool ? afterFee : afterFee > LAUNCH_RENT_RESERVE ? afterFee - LAUNCH_RENT_RESERVE : 0n;
+  return { platformFee, budget, reserve: afterFee - budget, ...quoteOpeningBuy(budget, curve) };
 }
 
 // ---- lock hash (must match math::lock_hash in the program) ----------------------------------

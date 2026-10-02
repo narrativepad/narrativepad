@@ -3,13 +3,14 @@
 // signature can only ever authorise the action shown to the user. Signing is free (no tx).
 import { z } from "zod";
 // Explicit extension: the e2e scripts load this file directly with node --experimental-strip-types.
-import { knownPair, LIVE_PAIRS } from "./pairs.ts";
+import { knownPair } from "./pairs.ts";
 
-/** Ballots shown, voted on and locked (D-018, D-019). The link ballots (x, telegram, website) are
- *  switched off while the launch flow is being tested; their code paths stay for later. */
-export const FIELDS = ["name", "ticker", "image", "pair"] as const;
+/** Ballots shown, voted on and locked (D-018). The link ballots (x, telegram, website) are
+ *  switched off while the launch flow is being tested; their code paths stay for later. The pair
+ *  is the creator's pick since D-024; narratives from before still carry a "pair" ballot. */
+export const FIELDS = ["name", "ticker", "image"] as const;
 export const LINK_FIELDS = ["x", "telegram", "website"] as const;
-export type Field = (typeof FIELDS)[number] | (typeof LINK_FIELDS)[number];
+export type Field = (typeof FIELDS)[number] | (typeof LINK_FIELDS)[number] | "pair";
 export const FIELD_LABEL: Record<Field, string> = {
   name: "Name",
   ticker: "Ticker",
@@ -33,8 +34,7 @@ export function entryLabel(field: Field, value: string): { title: string; sub?: 
   if (field === "ticker") return { title: `$${value}` };
   if (field === "pair") {
     const p = knownPair(value);
-    if (LIVE_PAIRS.has(value)) return { title: `${value} pair`, sub: "trades against SOL on pump.fun" };
-    return { title: `${value} pair`, sub: `${p ? `${p.name}${p.kind === "stock" ? " stock" : ""} · ` : ""}simulated for now` };
+    return { title: `${value} pair`, sub: p ? `${p.name}${p.kind === "stock" ? " stock" : ""}` : undefined };
   }
   if (field === "x" || field === "telegram" || field === "website") return { title: value.replace(/^https:\/\//, "") };
   return { title: value };
@@ -67,6 +67,8 @@ export const payloadSchemas = {
     name: z.string().trim().min(1).max(32).optional(),
     ticker: z.string().trim().min(1).max(10).optional(),
     image: z.string().regex(/^\/api\/images\/[a-f0-9]{64}$/).optional(),
+    /** pump.fun pair symbol, the creator's pick (D-024). */
+    pair: z.string().trim().min(1).max(16),
   }),
   submit: z.object({ narrativeId: id, field: z.enum(FIELDS), value: z.string().trim().min(1).max(300) }),
   vote: z.object({ narrativeId: id, field: z.enum(FIELDS), submissionId: id }),
@@ -106,6 +108,7 @@ function lines<A extends Action>(action: A, p: Payload<A>, simulation: boolean):
         ["Suggested name", c.name ?? "-"],
         ["Suggested ticker", c.ticker ?? "-"],
         ["Suggested image", c.image ?? "-"],
+        ["Pair", c.pair],
       ];
     }
     case "submit": {
@@ -120,7 +123,7 @@ function lines<A extends Action>(action: A, p: Payload<A>, simulation: boolean):
       const d = p as Payload<"deposit">;
       return [
         ["Narrative", d.narrativeId],
-        ["Amount (lamports)", d.amountLamports],
+        ["Amount (base units)", d.amountLamports],
         ["Holder rewards vote", d.holderRewards ? "on" : "off"],
         ["Mode", simulation ? "SIMULATION, no funds move" : "on-chain"],
       ];

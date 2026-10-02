@@ -4,12 +4,14 @@ import { notFound } from "next/navigation";
 import { Activity } from "@/components/Activity";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { Coin, coinTint, Icon, StageBadge, STAGE, TeamBadge, Who } from "@/components/bits";
+import { PairChip } from "@/components/Pair";
 import { Countdown } from "@/components/Countdown";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { RemindButton } from "@/components/Reminders";
 import { ShareMenu } from "@/components/ShareMenu";
 import { StarButton } from "@/components/StarButton";
-import { formatSol, formatTokens, launchBreakdown, PUMP } from "@/lib/math";
+import { formatTokens, launchBreakdown, PUMP } from "@/lib/math";
+import { curveOf, toWhole, withUnit } from "@/lib/units";
 import type { Stage } from "@/lib/phase";
 import { narrativeBySlug, type NarrativeDetail } from "@/lib/views";
 import { Ballots } from "./Ballots";
@@ -123,8 +125,8 @@ function HeroStats({ n }: { n: NarrativeDetail }) {
         <Stat icon="coins" label="Pool bought" sub={`${Number((bought * 1000n) / PUMP.totalSupply) / 10}% of supply`}>
           <AnimatedNumber value={Number(bought / 1_000_000n)} format="tokens" />
         </Stat>
-        <Stat icon="spark" label="Pool" sub={`fee ${formatSol(BigInt(e.platformFee), 3)} SOL`}>
-          {formatSol(total)} SOL
+        <Stat icon="spark" label="Pool" sub={`fee ${withUnit(e.platformFee, e.unit)}`}>
+          {withUnit(total, e.unit)}
         </Stat>
         <Stat icon="users" label="Holders">{e.depositorCount}</Stat>
         <Stat icon="lock" label="Unlocked" tone="text-accent" sub={`${formatTokens(BigInt(e.tokensClaimed))} claimed`}>
@@ -133,18 +135,18 @@ function HeroStats({ n }: { n: NarrativeDetail }) {
       </>
     );
   }
-  const projected = launchBreakdown(total, e.feeBps);
+  const projected = launchBreakdown(total, e.feeBps, curveOf(e.unit));
   return (
     <>
-      <Stat icon="coins" label="Pooled" tone="text-accent" sub={`of ${formatSol(BigInt(e.poolCap))} SOL cap`}>
-        <AnimatedNumber value={Number(total) / 1e9} format="sol" /> SOL
+      <Stat icon="coins" label="Pooled" tone="text-accent" sub={`of ${withUnit(e.poolCap, e.unit)} cap`}>
+        <AnimatedNumber value={toWhole(total, e.unit)} format="sol" /> {e.unit.symbol}
       </Stat>
       <Stat icon="users" label="In the pool">
         <AnimatedNumber value={e.depositorCount} />
       </Stat>
       {n.stage === "refunding" ? (
         <Stat icon="rocket" label="Needed to launch" sub="pool minimum">
-          {formatSol(BigInt(e.poolMin))} SOL
+          {withUnit(e.poolMin, e.unit)}
         </Stat>
       ) : (
         <Stat icon="rocket" label="Opening buy" sub="of total supply">
@@ -157,7 +159,7 @@ function HeroStats({ n }: { n: NarrativeDetail }) {
         ) : n.stage === "launching" ? (
           <Countdown to={e.launchAfter} done="launching…" />
         ) : (
-          `${formatSol(BigInt(e.totalRefunded))} SOL`
+          withUnit(e.totalRefunded, e.unit)
         )}
       </Stat>
     </>
@@ -165,7 +167,7 @@ function HeroStats({ n }: { n: NarrativeDetail }) {
 }
 
 const STAGE_LINE: Record<Stage, string> = {
-  voting: "Voting is open. Pick the name, ticker, image and pair.",
+  voting: "Voting is open. Pick the name, ticker and image.",
   pooling: "Locked. The pool is open and everyone gets the same price.",
   launching: "Pool closed. The coin is created and the whole pool buys in, in one transaction.",
   live: "Launched by the community pool.",
@@ -238,6 +240,7 @@ export default async function NarrativePage({ params }: { params: Promise<{ slug
                 <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <h1 className="text-silver text-[2.4rem] font-semibold leading-[1] tracking-[-0.04em] sm:text-[3.2rem]">{n.title}</h1>
                   {n.ticker && <span className="num text-[1.2rem] font-medium text-muted">${n.ticker}</span>}
+                  {n.pair && <PairChip pair={n.pair} className="self-center px-2.5 py-1 text-[0.8rem]" />}
                 </div>
                 <p className="mt-3 line-clamp-3 max-w-2xl break-words text-[1.02rem] leading-relaxed text-ink/85">{n.pitch}</p>
                 <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[0.8rem] text-dim">
@@ -305,7 +308,7 @@ export default async function NarrativePage({ params }: { params: Promise<{ slug
                 </div>
                 <ol className="space-y-5 p-5 text-[0.88rem] leading-relaxed text-muted">
                   {[
-                    ["lock", "Lock", "The winning name, ticker, image and pair are frozen and hashed."],
+                    ["lock", "Lock", "The winning name, ticker and image are frozen and hashed, with the pair."],
                     ["coins", "Pool", "A public pool opens. Everyone who joins gets the same price and votes holder rewards on or off."],
                     ["rocket", "Launch", "The coin is created and the whole pool buys in, in one transaction."],
                     ["spark", "Release", "Tokens unlock to everyone in equal tranches. Pool too small? Everyone gets 100% back."],

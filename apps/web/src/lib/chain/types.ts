@@ -1,5 +1,6 @@
 // The only boundary between the app and a chain (brief §4). Everything above it is chain-agnostic.
-// Implementations: `mock` (simulation, this build) and `solana` (escrow program, pending).
+// Implementations: `mock` (simulation) and `solana` (the escrow program on devnet).
+import type { PoolUnit } from "../units";
 
 export interface EscrowParams {
   narrativeId: string;
@@ -20,6 +21,16 @@ export interface EscrowParams {
   launchDeadline: Date;
   trancheCount: number;
   trancheIntervalSec: number;
+  /** What the pool holds (D-023). Limits above are in its base units. */
+  pool: { unit: PoolUnit; viaQuoteControl: boolean };
+}
+
+/** The escrows columns that record a token pool's token (D-023); all null for SOL pools. */
+export function tokenColumns(p: EscrowParams, curveReserves: bigint | null = null) {
+  const u = p.pool.unit;
+  return u.mint
+    ? [u.symbol, u.mint, u.decimals, u.tokenProgram, p.pool.viaQuoteControl, (curveReserves ?? BigInt(u.curveReserves)).toString()]
+    : [null, null, null, null, null, curveReserves?.toString() ?? null];
 }
 
 export interface TxRef {
@@ -41,7 +52,6 @@ export interface LaunchStatus {
 export interface ChainAdapter {
   readonly kind: "mock" | "solana";
   readonly simulated: boolean;
-  readonly currency: "SOL";
 
   createEscrow(p: EscrowParams): Promise<TxRef & { address: string; vault: string }>;
   /** mock: executes after the server verified the wallet's signed message.
@@ -50,6 +60,7 @@ export interface ChainAdapter {
   deposit(narrativeId: string, wallet: string, amount: bigint, holderRewards: boolean): Promise<TxRef & { orderIndex: number }>;
   /** Permissionless crank. Holder rewards go on if the "on" votes hold more SOL; a tie is off. */
   launch(narrativeId: string): Promise<TxRef & { mint: string; tokensBought: bigint; holderRewards: boolean }>;
+  /** `lamports` is the unspent-pool share, in the pool's currency (D-023). */
   claim(narrativeId: string, wallet: string): Promise<TxRef & { tokens: bigint; lamports: bigint }>;
   refund(narrativeId: string, wallet: string): Promise<TxRef & { amount: bigint }>;
   getLaunchStatus(narrativeId: string): Promise<LaunchStatus>;

@@ -21,7 +21,9 @@ import { q, q1 } from "../db";
 import { fromHex, uuidBytes } from "../math";
 import {
   claimIx,
+  claimTokenIx,
   createEscrowIx,
+  createTokenEscrowIx,
   decodeEscrow,
   decodeHolderVote,
   escrowPda,
@@ -33,13 +35,16 @@ import {
   parseHolderVoteMemo,
   programErrorName,
   PUMP_PROGRAM_ID,
+  pumpCurveReserves,
   pumpFeesFromGlobal,
   pumpHolderRewardsEnabled,
   refundIx,
+  refundTokenIx,
   vaultPda,
   type HolderVoteAccount,
+  type PoolToken,
 } from "../solana/escrow";
-import { ChainError, type ChainAdapter, type EscrowParams, type LaunchStatus } from "./types";
+import { ChainError, tokenColumns, type ChainAdapter, type EscrowParams, type LaunchStatus } from "./types";
 
 const DEVNET_GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const EXPLORER = "https://explorer.solana.com";
@@ -76,6 +81,9 @@ const FRIENDLY: Record<string, string> = {
   DepositTooSmall: "Deposit is below the minimum",
   WalletCapExceeded: "Deposit would exceed the per-wallet maximum",
   PoolCapExceeded: "Deposit would exceed the pool cap",
+  TokenPool: "This pool holds a token, not SOL",
+  NotATokenPool: "This pool holds SOL, not a token",
+  InvalidQuoteMint: "pump.fun doesn't accept this pool's token",
   NotLaunchable: "Escrow is not launchable right now",
   NotRefundable: "Escrow is not refundable",
   NotLaunched: "Escrow has not launched",
@@ -123,6 +131,14 @@ async function escrowRow(narrativeId: string) {
 }
 
 const secs = (d: Date) => BigInt(Math.floor(d.getTime() / 1000));
+
+const pumpGlobal = () => PublicKey.findProgramAddressSync([new TextEncoder().encode("global")], PUMP_PROGRAM_ID)[0];
+
+/** A token pool's token from its escrows row (D-023); null for SOL pools. */
+const poolToken = (row: any): PoolToken | null =>
+  row.quote_mint
+    ? { mint: new PublicKey(row.quote_mint), tokenProgram: new PublicKey(row.quote_program), viaQuoteControl: Boolean(row.quote_via_control) }
+    : null;
 
 /** The pool's on-chain holder-rewards tally; null for escrows from before D-022 with no new deposit. */
 async function holderVote(conn: Connection, escrow: PublicKey): Promise<HolderVoteAccount | null> {
@@ -242,17 +258,22 @@ async function launchAlt(conn: Connection) {
 export const solanaAdapter: ChainAdapter = {
   kind: "solana",
   simulated: false,
-  currency: "SOL",
 
   async createEscrow(p: EscrowParams) {
     const conn = await devnet();
     const escrow = escrowPda(uuidBytes(p.narrativeId));
     const vault = vaultPda(escrow);
+    const u = p.pool.unit;
+    const token: PoolToken | null = u.mint
+      ? { mint: new PublicKey(u.mint), tokenProgram: new PublicKey(u.tokenProgram!), viaQuoteControl: p.pool.viaQuoteControl }
+      : null;
+    // pump's starting reserves for this currency on devnet, for the site's estimates.
+    const global = await conn.getAccountInfo(pumpGlobal());
+    const curveReserves = global ? pumpCurveReserves(global.data, token !== null) : null;
     // Idempotent: if an earlier attempt landed but its reply was lost, adopt the escrow.
     let tx = "existing";
     if (!(await conn.getAccountInfo(escrow))) {
-      ({ sig: tx } = await send([
-        createEscrowIx(operator().publicKey, {
+      const args = {
           narrativeId16: uuidBytes(p.narrativeId),
           name: p.name,
           symbol: p.symbol,
@@ -270,17 +291,20 @@ export const solanaAdapter: ChainAdapter = {
           launchDeadline: secs(p.launchDeadline),
           trancheCount: p.trancheCount,
           trancheInterval: BigInt(p.trancheIntervalSec),
-        }),
-      ]));
+      };
+      const op = operator().publicKey;
+      ({ sig: tx } = await send([token ? createTokenEscrowIx(op, args, token) : createEscrowIx(op, args)]));
     }
     await q(
       `INSERT INTO escrows (narrative_id, chain, address, vault, create_tx, pool_cap, pool_min, per_wallet_max,
-         min_deposit, fee_bps, deposit_start, deposit_end, launch_after, launch_deadline, tranche_count, tranche_interval)
-       VALUES ($1,'solana',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         min_deposit, fee_bps, deposit_start, deposit_end, launch_after, launch_deadline, tranche_count, tranche_interval,
+         quote_symbol, quote_mint, quote_decimals, quote_program, quote_via_control, curve_reserves)
+       VALUES ($1,'solana',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        ON CONFLICT (narrative_id) DO NOTHING`,
       [
         p.narrativeId, escrow.toBase58(), vault.toBase58(), tx, p.poolCap.toString(), p.poolMin.toString(), p.perWalletMax.toString(),
         p.minDeposit.toString(), p.feeBps, p.depositStart, p.depositEnd, p.launchAfter, p.launchDeadline, p.trancheCount, p.trancheIntervalSec,
+        ...tokenColumns(p, curveReserves),
       ],
     );
     await syncEscrow(p.narrativeId);
@@ -298,7 +322,7 @@ export const solanaAdapter: ChainAdapter = {
     const acc = await conn.getAccountInfo(escrow);
     if (!acc) throw new ChainError("NotFound", "Escrow not found on-chain");
     const e = decodeEscrow(acc.data);
-    const global = await conn.getAccountInfo(PublicKey.findProgramAddressSync([new TextEncoder().encode("global")], PUMP_PROGRAM_ID)[0]);
+    const global = await conn.getAccountInfo(pumpGlobal());
     if (!global) throw new Error("pump Global not found");
     // The program decides holder rewards from the tally and pump's switch (D-022); the accounts
     // passed to pump must match that decision, so predict it the same way.
@@ -312,6 +336,7 @@ export const solanaAdapter: ChainAdapter = {
       fees: pumpFeesFromGlobal(global.data),
       createPayer: config.solana.createPayer,
       holderRewards,
+      token: poolToken(row) ?? undefined,
     });
     const { sig } = await send([ix], { cu: 1_000_000, alt: await launchAlt(conn) });
     await syncEscrow(narrativeId);
@@ -324,7 +349,10 @@ export const solanaAdapter: ChainAdapter = {
   async claim(narrativeId, wallet) {
     const row = await escrowRow(narrativeId);
     if (!row.launched || !row.mint) throw new ChainError("NotLaunched", "Escrow has not launched");
-    const { sig, logs } = await send([claimIx(operator().publicKey, new PublicKey(row.address), new PublicKey(wallet), new PublicKey(row.mint))], { cu: 300_000 });
+    const [op, escrow, owner, mint] = [operator().publicKey, new PublicKey(row.address), new PublicKey(wallet), new PublicKey(row.mint)];
+    const token = poolToken(row);
+    const ix = token ? claimTokenIx(op, escrow, owner, mint, token) : claimIx(op, escrow, owner, mint);
+    const { sig, logs } = await send([ix], { cu: 300_000 });
     await syncEscrow(narrativeId);
     const ev = parseEvents(logs).find((x) => x.kind === "Claimed");
     return ev && ev.kind === "Claimed" ? { tx: sig, tokens: ev.tokens, lamports: ev.leftoverLamports } : { tx: sig, tokens: 0n, lamports: 0n };
@@ -332,7 +360,11 @@ export const solanaAdapter: ChainAdapter = {
 
   async refund(narrativeId, wallet) {
     const row = await escrowRow(narrativeId);
-    const { sig, logs } = await send([refundIx(new PublicKey(row.address), new PublicKey(wallet))]);
+    const [escrow, owner] = [new PublicKey(row.address), new PublicKey(wallet)];
+    const token = poolToken(row);
+    // Token refunds recreate a closed token account; the operator pays that rent, never the pool.
+    const ix = token ? refundTokenIx(operator().publicKey, escrow, owner, token) : refundIx(escrow, owner);
+    const { sig, logs } = await send([ix], { cu: token ? 200_000 : undefined });
     await syncEscrow(narrativeId);
     const ev = parseEvents(logs).find((x) => x.kind === "Refunded");
     return { tx: sig, amount: ev && ev.kind === "Refunded" ? ev.amount : 0n };

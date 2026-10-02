@@ -1,5 +1,6 @@
 import { TeamBadge, Who } from "@/components/bits";
-import { formatSol, formatTokens } from "@/lib/math";
+import { formatTokens } from "@/lib/math";
+import { withUnit } from "@/lib/units";
 import type { NarrativeDetail } from "@/lib/views";
 
 /** Who is in the pool, and how concentrated it is. One row per wallet. */
@@ -21,7 +22,7 @@ export function Holders({ n }: { n: NarrativeDetail }) {
     [e.launched ? "Holders" : "In the pool", String(live.length)],
     ["Largest holder", `${(live[0]?.sharePct ?? 0).toFixed(1)}%`],
     ["Top 5 together", `${top(5).toFixed(1)}%`],
-    ["Cap per wallet", `${formatSol(BigInt(e.perWalletMax))} SOL`],
+    ["Cap per wallet", withUnit(e.perWalletMax, e.unit)],
   ];
   const max = Math.max(...n.holders.map((h) => h.sharePct), 1);
 
@@ -50,7 +51,7 @@ export function Holders({ n }: { n: NarrativeDetail }) {
               {h.refunded && <span className="text-[0.7rem] text-dim">refunded</span>}
             </span>
             {h.tokens && <span className="num relative hidden text-xs text-muted sm:inline">{formatTokens(BigInt(h.tokens))} tokens</span>}
-            <span className="num relative w-20 text-right text-muted">{formatSol(BigInt(h.amount))} SOL</span>
+            <span className="num relative w-20 text-right text-muted">{withUnit(h.amount, e.unit)}</span>
             <span className="num relative w-14 text-right font-semibold">{h.sharePct.toFixed(1)}%</span>
           </li>
         ))}

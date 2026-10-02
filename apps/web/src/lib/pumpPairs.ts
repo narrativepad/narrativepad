@@ -1,6 +1,6 @@
 // Live list of pump.fun quote assets (D-019), read from mainnet with plain JSON-RPC. Read-only and
 // keyless; cached for an hour. If the read fails or the layout looks wrong, the snapshot in
-// `pairs.ts` is used, so the pair ballot never depends on an RPC being up.
+// `pairs.ts` is used, so the pair picker never depends on an RPC being up.
 import "server-only";
 import { PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -49,12 +49,12 @@ async function readLive(): Promise<PairOption[]> {
   // Name the mints the snapshot doesn't know: Token-2022 metadata first, then Metaplex metadata.
   // RPC takes at most 100 accounts per call.
   const unknown = mints.filter((m) => !BY_MINT.has(m));
-  const meta = new Map<string, { name: string; symbol: string }>();
+  const meta = new Map<string, { name: string; symbol: string; uri?: string }>();
   for (const batch of chunks(unknown, 100)) {
     const parsed = await rpc<{ value: any[] }>("getMultipleAccounts", [batch, { encoding: "jsonParsed" }]);
     batch.forEach((m, i) => {
       const ext = parsed.value[i]?.data?.parsed?.info?.extensions?.find((e: any) => e.extension === "tokenMetadata")?.state;
-      if (ext?.symbol) meta.set(m, { name: ext.name ?? ext.symbol, symbol: ext.symbol });
+      if (ext?.symbol) meta.set(m, { name: ext.name ?? ext.symbol, symbol: ext.symbol, uri: ext.uri });
     });
   }
   const noMeta = unknown.filter((m) => !meta.has(m));
@@ -71,9 +71,10 @@ async function readLive(): Promise<PairOption[]> {
       };
       const name = str(1 + 32 + 32);
       const symbol = str(name.next);
-      if (symbol.s) meta.set(m, { name: name.s || symbol.s, symbol: symbol.s });
+      if (symbol.s) meta.set(m, { name: name.s || symbol.s, symbol: symbol.s, uri: str(symbol.next).s });
     });
   }
+  const logos = new Map(await Promise.all(unknown.map(async (m) => [m, await metadataImage(meta.get(m)?.uri)] as const)));
   const named = (m: string): PairOption => {
     const x = meta.get(m);
     const name = x?.name ?? `Token ${short(m)}`;
@@ -82,9 +83,22 @@ async function readLive(): Promise<PairOption[]> {
       name: name.replace(/\s*(xStock|- Backpack Securities)\s*$/i, ""),
       mint: m,
       kind: /xStock|Securities|ETF/i.test(name) ? "stock" : "crypto",
+      logo: logos.get(m) ?? null,
     };
   };
   return [SOL_PAIR, ...mints.map((m) => BY_MINT.get(m) ?? named(m))];
+}
+
+/** The image in a token's metadata JSON (https only), or null. Best effort: a slow host just
+ *  means a monogram until the next refresh. */
+async function metadataImage(uri: string | undefined): Promise<string | null> {
+  if (!uri?.startsWith("https://")) return null;
+  try {
+    const json = await (await fetch(uri, { signal: AbortSignal.timeout(3000) })).json();
+    return typeof json?.image === "string" && json.image.startsWith("https://") ? json.image : null;
+  } catch {
+    return null;
+  }
 }
 
 const METAPLEX = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");

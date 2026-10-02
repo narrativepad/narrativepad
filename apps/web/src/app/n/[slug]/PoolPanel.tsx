@@ -6,14 +6,14 @@ import { Icon, ProgressBar, TeamBadge, Who } from "@/components/bits";
 import { Countdown } from "@/components/Countdown";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Providers";
-import { chainErrorMessage, useOnchainDeposit } from "@/lib/client/onchain";
+import { PairLogo } from "@/components/Pair";
+import { chainErrorMessage, FAUCET, useOnchainDeposit } from "@/lib/client/onchain";
 import { useMine } from "@/lib/client/useMine";
 import { useSigned } from "@/lib/client/useSigned";
-import { formatSol, formatTokens, launchBreakdown, parseSol } from "@/lib/math";
+import { formatTokens, launchBreakdown } from "@/lib/math";
 import { FEE_MODE } from "@/lib/messages";
+import { curveOf, formatAmount, parseAmount, quickAmounts, toWhole, withUnit } from "@/lib/units";
 import type { NarrativeDetail } from "@/lib/views";
-
-const QUICK = ["0.1", "0.25", "0.5", "1"];
 
 function Row({ k, v }: { k: React.ReactNode; v: React.ReactNode }) {
   return (
@@ -26,6 +26,8 @@ function Row({ k, v }: { k: React.ReactNode; v: React.ReactNode }) {
 
 export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string }) {
   const e = n.escrow!;
+  const unit = e.unit;
+  const sym = unit.symbol;
   const { run, busy } = useSigned();
   const { position } = useMine(n.id, version);
   const toast = useToast();
@@ -50,19 +52,19 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
     const r = w < p ? w : p;
     return r > 0n ? r : 0n;
   })();
-  const parsed = parseSol(amount);
+  const parsed = parseAmount(amount, unit);
   const pooling = e.phase === "pooling";
-  const projected = launchBreakdown(total + (parsed ?? 0n), e.feeBps);
+  const projected = launchBreakdown(total + (parsed ?? 0n), e.feeBps, curveOf(unit));
   const myShare = parsed && total + parsed > 0n ? Number(((mine + parsed) * 10_000n) / (total + parsed)) / 100 : null;
   const myTokens = parsed && total + parsed > 0n ? (projected.tokens * (mine + parsed)) / (total + parsed) : 0n;
 
   const amountError = useMemo(() => {
     if (!amount) return null;
     if (parsed === null) return "Enter an amount like 0.5";
-    if (parsed < BigInt(e.minDeposit)) return `Minimum is ${formatSol(BigInt(e.minDeposit))} SOL`;
-    if (parsed > room) return `You can add up to ${formatSol(room)} SOL`;
+    if (parsed < BigInt(e.minDeposit)) return `Minimum is ${withUnit(e.minDeposit, unit)}`;
+    if (parsed > room) return `You can add up to ${withUnit(room, unit)}`;
     return null;
-  }, [amount, parsed, room, e.minDeposit]);
+  }, [amount, parsed, room, e.minDeposit, unit]);
 
   async function deposit(ev: React.FormEvent) {
     ev.preventDefault();
@@ -70,7 +72,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
     if (onchain) {
       setSending(true);
       try {
-        if (await sendDeposit(n.id, parsed, holderRewards)) {
+        if (await sendDeposit(n.id, parsed, holderRewards, unit)) {
           toast("ok", "You're in the pool");
           setAmount("");
           router.refresh();
@@ -113,9 +115,11 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
         <div>
           <div className="flex items-baseline justify-between">
             <span className="num text-[2.2rem] font-semibold leading-none tracking-[-0.03em]">
-              <AnimatedNumber value={Number(total) / 1e9} format="sol" /> <span className="text-base font-normal text-dim">SOL</span>
+              <AnimatedNumber value={toWhole(total, unit)} format="sol" /> <span className="text-base font-normal text-dim">{sym}</span>
             </span>
-            <span className="num text-sm text-muted">{fillPct}% of {formatSol(cap)}</span>
+            <span className="num text-sm text-muted">
+              {fillPct}% of {formatAmount(cap, unit)}
+            </span>
           </div>
           <div className="mt-3">
             <ProgressBar value={total} max={cap} marker={min} live={pooling} />
@@ -124,7 +128,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
             <span className="flex items-center gap-1">
               <Icon name="users" className="h-3.5 w-3.5" /> {e.depositorCount === 0 ? "nobody yet" : `${e.depositorCount} joined`}
             </span>
-            <span>{total >= min ? "minimum reached" : `${formatSol(min)} SOL needed to launch`}</span>
+            <span>{total >= min ? "minimum reached" : `${withUnit(min, unit)} needed to launch`}</span>
           </div>
         </div>
 
@@ -134,8 +138,8 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
           <form onSubmit={deposit} className="rounded-2xl border border-white/[0.07] bg-black/35 p-4">
             <div className="flex items-center justify-between text-[0.72rem] text-dim">
               <span>You put in</span>
-              <button type="button" className="hover:text-accent" onClick={() => setAmount(formatSol(room, 9).replace(/,/g, ""))}>
-                Max {formatSol(room)} SOL
+              <button type="button" className="hover:text-accent" onClick={() => setAmount(formatAmount(room, unit, unit.decimals).replace(/,/g, ""))}>
+                Max {withUnit(room, unit)}
               </button>
             </div>
             <div className="mt-1 flex items-center gap-2">
@@ -145,14 +149,14 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
                 placeholder="0.00"
                 value={amount}
                 onChange={(x) => setAmount(x.target.value.replace(",", "."))}
-                aria-label="Amount in SOL"
+                aria-label={`Amount in ${sym}`}
               />
-              <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] py-1.5 pl-1.5 pr-3 text-sm font-semibold">
-                <span className="h-4 w-4 rounded-full bg-gradient-to-br from-[#9945ff] to-[#14f195]" /> SOL
+              <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] py-1 pl-1 pr-3 text-sm font-semibold">
+                <PairLogo pair={unit} size={22} /> {sym}
               </span>
             </div>
             <div className="mt-2 flex gap-1.5">
-              {QUICK.map((qv) => (
+              {quickAmounts(unit).map((qv) => (
                 <button
                   key={qv}
                   type="button"
@@ -168,7 +172,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
             <fieldset className="mt-3">
               <legend className="flex w-full items-center justify-between text-[0.72rem] text-dim">
                 <span>Holder rewards</span>
-                <span>your vote counts with your SOL</span>
+                <span>your vote counts with your {sym}</span>
               </legend>
               <div className="mt-1.5 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Holder rewards">
                 {([true, false] as const).map((on) => (
@@ -206,7 +210,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
                   <Row k="Opening buy" v={`${projected.pctOfSupply.toFixed(1)}% of supply`} />
                 </>
               ) : (
-                <Row k="Max per wallet" v={`${formatSol(perWallet)} SOL`} />
+                <Row k="Max per wallet" v={withUnit(perWallet, unit)} />
               )}
               <Row k="Platform fee" v={`${(e.feeBps / 100).toFixed(0)}% · only if it launches`} />
             </div>
@@ -217,8 +221,15 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
               </li>
               <li className="flex gap-2">
                 <Icon name="refund" className="mt-px h-3.5 w-3.5 shrink-0 text-accent" />
-                100% back if the pool misses {formatSol(min)} SOL or the launch fails.
+                100% back if the pool misses {withUnit(min, unit)} or the launch fails.
               </li>
+              {unit.mint && (
+                <li className="flex gap-2 text-warn/90">
+                  <Icon name="flag" className="mt-px h-3.5 w-3.5 shrink-0" />
+                  {sym} is a token its issuer can freeze. If they froze the pool&apos;s or your {sym}, deposits and refunds would wait until they
+                  unfreeze it. SOL pools don&apos;t have this risk.
+                </li>
+              )}
             </ul>
             {needWallet ? (
               <button type="button" className="btn-accent mt-3 h-12 w-full text-[0.95rem]" onClick={connect}>
@@ -236,13 +247,18 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
               </button>
             )}
             {n.preview ? (
-              <p className="mt-2 text-center text-[0.72rem] text-warn/80">Preview build: this deposit is simulated. No SOL leaves your wallet.</p>
+              <p className="mt-2 text-center text-[0.72rem] text-warn/80">Preview build: this deposit is simulated. No {sym} leaves your wallet.</p>
             ) : (
               <p className="mt-2 text-center text-[0.72rem] text-warn/80">
-                Devnet: test SOL only. Set your wallet to devnet and get free SOL at{" "}
-                <a className="underline" href="https://faucet.solana.com" target="_blank" rel="noopener noreferrer">
-                  faucet.solana.com
-                </a>
+                Devnet: test {sym} only. Set your wallet to devnet and get free {sym === "SOL" ? "SOL" : `${sym} (and a little SOL for fees)`} at{" "}
+                {(sym === "SOL" ? [FAUCET.SOL] : sym in FAUCET ? [FAUCET[sym as keyof typeof FAUCET], FAUCET.SOL] : [FAUCET.SOL]).map((f, i) => (
+                  <span key={f.url}>
+                    {i > 0 && " and "}
+                    <a className="underline" href={f.url} target="_blank" rel="noopener noreferrer">
+                      {f.name}
+                    </a>
+                  </span>
+                ))}
                 .
               </p>
             )}
@@ -252,7 +268,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
         {position && (
           <div className="rounded-2xl border border-white/[0.07] bg-black/35 p-4">
             <div className="mb-1.5 text-sm font-semibold">Your position</div>
-            <Row k="In the pool" v={`${formatSol(BigInt(position.deposited))} SOL`} />
+            <Row k="In the pool" v={withUnit(position.deposited, unit)} />
             <Row k="Your share" v={`${position.sharePct.toFixed(2)}%`} />
             {e.launched && (
               <>
@@ -271,7 +287,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
                   : BigInt(position.claimable) > 0n
                     ? `Claim ${formatTokens(BigInt(position.claimable))} tokens`
                     : BigInt(position.leftover) > 0n
-                      ? `Claim ${formatSol(BigInt(position.leftover), 4)} SOL unspent`
+                      ? `Claim ${withUnit(position.leftover, unit, 4)} unspent`
                       : "Next tranche unlocks soon"}
               </button>
             )}
@@ -281,7 +297,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
                 disabled={position.refunded || busy !== null}
                 onClick={() => run("refund", `/api/narratives/${n.id}/refund`, "refund", { narrativeId: n.id }, "Refunded in full")}
               >
-                {position.refunded ? "Refunded" : busy === "refund" ? "Refunding…" : `Refund ${formatSol(BigInt(position.deposited))} SOL`}
+                {position.refunded ? "Refunded" : busy === "refund" ? "Refunding…" : `Refund ${withUnit(position.deposited, unit)}`}
               </button>
             )}
           </div>
@@ -294,7 +310,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
   );
 }
 
-/** The pool's holder-rewards vote by SOL behind each side. A tie is off. Settled at launch. */
+/** The pool's holder-rewards vote by the amount behind each side. A tie is off. Settled at launch. */
 function HolderVote({ e }: { e: NonNullable<NarrativeDetail["escrow"]> }) {
   const on = BigInt(e.holderVotesOn);
   const off = BigInt(e.holderVotesOff);
@@ -316,10 +332,10 @@ function HolderVote({ e }: { e: NonNullable<NarrativeDetail["escrow"]> }) {
       </div>
       <div className="num mt-1.5 flex justify-between text-[0.68rem] text-dim">
         <span>
-          on {pct.toFixed(0)}% · {formatSol(on)} SOL
+          on {pct.toFixed(0)}% · {withUnit(on, e.unit)}
         </span>
         <span>
-          off {(100 - pct).toFixed(0)}% · {formatSol(off)} SOL
+          off {(100 - pct).toFixed(0)}% · {withUnit(off, e.unit)}
         </span>
       </div>
     </div>
@@ -374,7 +390,7 @@ function Depositors({ n }: { n: NarrativeDetail }) {
               <Who address={d.wallet} size={16} /> {d.isTeam && <TeamBadge />}
             </span>
             {d.holderRewards !== null && <span className="text-[0.65rem] text-dim">rewards {d.holderRewards ? "on" : "off"}</span>}
-            <span className="num text-ink">{formatSol(BigInt(d.amount))}</span>
+            <span className="num text-ink">{formatAmount(BigInt(d.amount), e.unit)}</span>
           </li>
         ))}
       </ol>

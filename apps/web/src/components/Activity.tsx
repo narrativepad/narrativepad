@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatSol, formatTokens } from "@/lib/math";
+import { formatTokens } from "@/lib/math";
 import { entryLabel, FIELD_LABEL, type Field } from "@/lib/messages";
+import { SOL_UNIT, withUnit } from "@/lib/units";
 import type { ActivityItem } from "@/lib/views";
 import { Who } from "./bits";
 
@@ -60,7 +61,7 @@ export function Activity({ items, className = "" }: { items: ActivityItem[]; cla
             } else if (a.kind === "claim") {
               what = <span className="num font-medium text-ink">{formatTokens(BigInt(a.amount ?? "0"))} tokens</span>;
             } else {
-              what = <span className="num font-medium text-ink">{formatSol(BigInt(a.amount ?? "0"))} SOL</span>;
+              what = <span className="num font-medium text-ink">{withUnit(a.amount ?? "0", a.unit ?? SOL_UNIT)}</span>;
             }
             return (
               <li key={`${a.at}-${i}`} className="flex items-start gap-2.5 px-4 py-2.5 text-[0.8rem]">

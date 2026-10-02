@@ -73,6 +73,9 @@ curl.exe -sSL -o "$env:TEMP\narrative_escrow.so" https://github.com/narrativepad
 curl.exe -sSL https://github.com/narrativepad/narrativepad/releases/download/devnet-build/narrative_escrow.so.sha256   # compare:
 (Get-FileHash "$env:TEMP\narrative_escrow.so" -Algorithm SHA256).Hash.ToLower()
 solana balance -k $key --url devnet
+# Only when the new build is bigger than the program account (see "solana program show": Data
+# Length). D-023's build is 656,128 bytes against 510,208, so extend once by 150,000 (~0.76 SOL).
+solana program extend 42bwRMxcnpbfiH1K68dGuVkgEWdZoWY72fZ7VVVcbVrY 150000 -k $key --url devnet
 solana program deploy "$env:TEMP\narrative_escrow.so" --program-id target\deploy\narrative_escrow-keypair.json -k $key --url devnet
 solana program show 42bwRMxcnpbfiH1K68dGuVkgEWdZoWY72fZ7VVVcbVrY --url devnet
 ```
@@ -97,6 +100,14 @@ node --experimental-strip-types scripts/devnet-create-alt.ts "$env:USERPROFILE\.
 Railway variables: `CHAIN=solana`, `LAUNCH_ALT=<table>`, and the pool limits the program
 allows on devnet: `POOL_CAP_SOL=0.5`, `POOL_MIN_SOL=0.1`, `PER_WALLET_MAX_SOL=0.25`,
 `MIN_DEPOSIT_SOL=0.01`. `HELIUS_API_KEY` (already set) makes the server use Helius devnet.
+USDC pools (D-024) default to cap 8, minimum 1, 4 per wallet, 0.5 minimum deposit, which fit
+pump's small devnet USDC curve; override with `POOL_CAP_USDC`, `POOL_MIN_USDC`,
+`PER_WALLET_MAX_USDC`, `MIN_DEPOSIT_USDC`. Devnet USDC is free at https://faucet.circle.com
+(pick Solana Devnet).
+
+**Order matters when the escrow's accounts change:** upgrade the devnet program first, then
+deploy the site. The site from D-024 on passes the D-023 `PoolQuote` account, which the older
+program doesn't expect in `launch`.
 
 The secret operator key goes from its file straight into Railway, without being printed:
 

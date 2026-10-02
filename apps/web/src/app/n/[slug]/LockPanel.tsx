@@ -1,16 +1,25 @@
 "use client";
 
 import { useState } from "react";
+import { short } from "@/components/bits";
+import { PairLogo } from "@/components/Pair";
 import { canonicalJson, fromHex, lockHash, sha256Hex, uuidBytes } from "@/lib/math";
-import { entryLabel, FEE_MODE, type Field } from "@/lib/messages";
+import { entryLabel, FEE_MODE } from "@/lib/messages";
 import type { NarrativeDetail } from "@/lib/views";
 
-function Labelled({ field, value }: { field: Field; value: string }) {
-  const { title, sub } = entryLabel(field, value);
+/** The locked pair with its logo, and the exact mint the pool holds on this chain. */
+function PairRow({ n, pair, mint }: { n: NarrativeDetail; pair: string; mint?: string | null }) {
+  const p = n.pair?.symbol === pair ? n.pair : null;
   return (
-    <span>
-      <span className="text-ink">{title}</span>
-      {sub && <span className="block text-dim">{sub}</span>}
+    <span className="flex items-center gap-2.5">
+      {p ? <PairLogo pair={p} size={28} /> : null}
+      <span className="min-w-0">
+        <span className="num block font-semibold text-ink">{pair}</span>
+        <span className="block text-dim">
+          {p && p.name !== pair ? `${p.name}${p.kind === "stock" ? " stock" : ""}` : entryLabel("pair", pair).sub}
+          {mint && <span className="mono"> · {short(mint, 4)}</span>}
+        </span>
+      </span>
     </span>
   );
 }
@@ -36,7 +45,7 @@ function FeeRow({ n }: { n: NarrativeDetail }) {
   return (
     <span>
       <span className="text-ink">Voted by the pool</span>
-      <span className="block text-dim">Everyone who joins votes holder rewards on or off, weighted by their SOL.</span>
+      <span className="block text-dim">Everyone who joins votes holder rewards on or off, weighted by what they put in.</span>
     </span>
   );
 }
@@ -90,7 +99,7 @@ export function LockPanel({ n }: { n: NarrativeDetail }) {
           {row("Name", <span className="font-medium text-ink">{l.name}</span>)}
           {row("Ticker", <span className="num text-ink">${l.symbol}</span>)}
           {l.launch && row("Launches on", <span className="text-ink">{l.launch.venue}</span>)}
-          {l.launch && row("Pair", <Labelled field="pair" value={l.launch.pair} />)}
+          {l.launch && row("Pair", <PairRow n={n} pair={l.launch.pair} mint={l.launch.pairMint} />)}
           {l.launch && !l.launch.fees && row("Creator fees", <FeeRow n={n} />)}
           {l.links.twitter && row("X", <a className="text-info hover:underline" href={l.links.twitter} target="_blank" rel="noopener noreferrer nofollow">{l.links.twitter}</a>)}
           {l.links.telegram && row("Telegram", <a className="text-info hover:underline" href={l.links.telegram} target="_blank" rel="noopener noreferrer nofollow">{l.links.telegram}</a>)}

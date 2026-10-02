@@ -9,7 +9,7 @@ export function PreviewBanner({ devnet }: { devnet: boolean }) {
       <span>
         {devnet ? (
           <>
-            <span className="font-medium text-ink">Devnet:</span> pools run on Solana devnet with free test SOL, not real money. Set your wallet to
+            <span className="font-medium text-ink">Devnet:</span> pools run on Solana devnet with free test SOL and USDC, not real money. Set your wallet to
             devnet.{" "}
           </>
         ) : (

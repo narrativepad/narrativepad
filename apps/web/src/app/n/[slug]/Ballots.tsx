@@ -8,7 +8,6 @@ import { useMine } from "@/lib/client/useMine";
 import { useSigned } from "@/lib/client/useSigned";
 import { entryLabel, FIELD_LABEL, FIELDS, LINK_FIELDS, REQUIRED_FIELDS, type Field } from "@/lib/messages";
 import { displayName } from "@/lib/names";
-import type { PairOption } from "@/lib/pairs";
 import type { NarrativeDetail } from "@/lib/views";
 
 const PLACEHOLDER: Record<Field, string> = {
@@ -20,14 +19,6 @@ const PLACEHOLDER: Record<Field, string> = {
   telegram: "https://t.me/…",
   website: "https://…",
 };
-
-/** One-line explainer under the ballot title. */
-const HINT: Partial<Record<Field, string>> = {
-  pair: "What the coin trades against on pump.fun: SOL, another coin, or a stock. Real launches use SOL until the escrow can swap at launch.",
-};
-
-/** The default SOL pair is seeded, so it is shown without a "by …" credit. */
-const isPreset = (field: Field, value: string) => field === "pair" && value === "SOL";
 
 type Entry = NarrativeDetail["ballots"][Field]["entries"][number];
 const pctOf = (votes: number, total: number) => (total > 0 ? (votes / total) * 100 : 0);
@@ -112,7 +103,6 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: (t
           {b.entries.length} entr{b.entries.length === 1 ? "y" : "ies"} · {b.total} vote{b.total === 1 ? "" : "s"}
         </span>
       </div>
-      {HINT[field] && <p className="border-b border-white/[0.06] px-5 py-2 text-[0.72rem] text-dim">{HINT[field]}</p>}
 
       {b.entries.length === 0 ? (
         <p className="flex-1 px-5 py-5 text-sm text-dim">{open ? "No entries yet. Add the first one." : "No entries."}</p>
@@ -168,16 +158,7 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: (t
                       </span>
                     )}
                     <span className="flex min-w-0 items-center gap-1.5 text-[0.7rem] text-dim" title={e.submitter}>
-                      {isPreset(field, e.value) ? (
-                        <span className="truncate">{entryLabel(field, e.value).sub}</span>
-                      ) : (
-                        <>
-                          <span className="truncate">
-                            {field === "pair" && `${entryLabel(field, e.value).sub} · `}by {displayName(e.submitter)}
-                          </span>{" "}
-                          {e.isTeam && <TeamBadge />}
-                        </>
-                      )}
+                      <span className="truncate">by {displayName(e.submitter)}</span> {e.isTeam && <TeamBadge />}
                       {lead && <span className="shrink-0 font-semibold text-accent">· {leaderWord}</span>}
                       {mine && <span className="shrink-0 font-semibold text-ink">· Your vote</span>}
                     </span>
@@ -196,9 +177,7 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: (t
 
       {open && (
         <div className="border-t border-white/[0.06] p-2.5">
-          {field === "pair" ? (
-            <PairPicker options={n.pairOptions.filter((o) => !b.entries.some((e) => e.value === o.symbol))} busy={busy !== null} onAdd={submit} />
-          ) : field === "image" ? (
+          {field === "image" ? (
             <div className="flex items-center gap-3">
               <input
                 ref={fileRef}
@@ -249,44 +228,6 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: (t
         />
       )}
     </section>
-  );
-}
-
-/** Adds a pair from pump.fun's list, grouped into coins and stocks. */
-function PairPicker({ options, busy, onAdd }: { options: PairOption[]; busy: boolean; onAdd: (symbol: string) => Promise<void> }) {
-  const [pick, setPick] = useState("");
-  const groups = [
-    ["Coins", options.filter((o) => o.kind === "crypto")],
-    ["Stocks", options.filter((o) => o.kind === "stock")],
-  ] as const;
-  return (
-    <form
-      className="flex gap-2"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (!pick) return;
-        await onAdd(pick);
-        setPick("");
-      }}
-    >
-      <select className="input h-9 py-0 text-[0.82rem]" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="New Pair entry">
-        <option value="">Add a pair pump.fun accepts…</option>
-        {groups.map(([label, list]) =>
-          list.length ? (
-            <optgroup key={label} label={label}>
-              {list.map((o) => (
-                <option key={o.mint} value={o.symbol}>
-                  {o.symbol} · {o.name}
-                </option>
-              ))}
-            </optgroup>
-          ) : null,
-        )}
-      </select>
-      <button className="btn h-9 shrink-0 py-0 text-xs" disabled={!pick || busy}>
-        {busy ? "…" : "Add"}
-      </button>
-    </form>
   );
 }
 

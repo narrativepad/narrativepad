@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Icon } from "@/components/bits";
 import { HowItWorks } from "@/components/HowItWorks";
-import { config } from "@/lib/config";
-import { formatSol } from "@/lib/math";
+import { config, type PoolLimits } from "@/lib/config";
+import { SOL_UNIT, withUnit } from "@/lib/units";
 
 export const metadata: Metadata = { title: "How it works" };
 
@@ -37,11 +37,14 @@ export default function HowItWorksPage() {
       d: "Someone with several wallets can join more than once, but they still pay exactly the same price as everyone else.",
     },
   ];
+  // Each limit in both pool currencies (D-023): "20 SOL · 8 USDC".
+  const both = (pick: (l: PoolLimits) => bigint) =>
+    `${withUnit(pick(config.pools.SOL), SOL_UNIT)} · ${withUnit(pick(config.pools.USDC), { symbol: "USDC", decimals: 6 })}`;
   const rules: [string, string][] = [
-    ["Pool cap", `${formatSol(config.poolCap)} SOL`],
-    ["Pool minimum to launch", `${formatSol(config.poolMin)} SOL`],
-    ["Max per wallet", `${formatSol(config.perWalletMax)} SOL`],
-    ["Smallest deposit", `${formatSol(config.minDeposit)} SOL`],
+    ["Pool cap", both((l) => l.poolCap)],
+    ["Pool minimum to launch", both((l) => l.poolMin)],
+    ["Max per wallet", both((l) => l.perWalletMax)],
+    ["Smallest deposit", both((l) => l.minDeposit)],
     ["Voting window", `${min(config.voteDurationSec)} min`],
     ["Pool window", `${min(config.depositWindowSec)} min`],
     ["Platform fee", `${(config.feeBps / 100).toFixed(0)}%, only if it launches`],
@@ -53,8 +56,9 @@ export default function HowItWorksPage() {
     ["How is this different from buying on launch day?", "On a normal launch, bots and insiders buy in the first block and everyone else pays more. Here, everyone in the pool buys together in the transaction that creates the coin."],
     ["When do I get my tokens?", `Right after launch, in ${config.trancheCount} equal unlocks every ${min(config.trancheIntervalSec)} minutes. Everyone unlocks on the same schedule, so nobody can dump on the rest of the pool.`],
     ["What if the pool doesn't fill?", "If it misses the minimum or the launch fails, everyone takes back 100% of what they put in. The fee is only charged on a successful launch."],
-    ["What can a coin be paired with?", "Anything pump.fun accepts: SOL, USDC, wrapped BTC and ETH, a few other coins, and tokenized stocks like NVIDIA, Tesla or SpaceX. The list comes from pump.fun itself, and the crowd votes on it. SOL is the default. For now only SOL pairs launch for real; the escrow will swap the pool at launch for the others."],
-    ["What are holder rewards?", "A pump.fun setting chosen once, when the coin is created. On: the creator fee from every trade goes to the coin's holders, for good. Off: the fees are split 50% to the pool, 30% to the creator and 20% to the platform. Everyone who joins the pool votes, and each vote counts with the SOL behind it. It replaced pump.fun's old cashback option."],
+    ["What can a coin be paired with?", "Whoever starts the narrative picks the pair from pump.fun's own list: SOL, USDC, wrapped BTC and ETH, a few other coins, and tokenized stocks like NVIDIA, Tesla or SpaceX. The pool collects the pair itself, so a USDC coin's pool holds USDC. SOL and USDC pools are open now; the others open with the mainnet launch, where your wallet will swap into the pair as you join."],
+    ["Is a USDC pool different from a SOL pool?", "Same rules, same escrow, different currency. One difference: USDC's issuer can freeze tokens. If it ever froze the pool's or a depositor's USDC, deposits and refunds would wait until it was unfrozen. SOL pools have no issuer, so nothing can hold up a SOL refund."],
+    ["What are holder rewards?", "A pump.fun setting chosen once, when the coin is created. On: the creator fee from every trade goes to the coin's holders, for good. Off: the fees are split 50% to the pool, 30% to the creator and 20% to the platform. Everyone who joins the pool votes, and each vote counts with the amount behind it. It replaced pump.fun's old cashback option."],
   ];
 
   return (
@@ -165,20 +169,24 @@ export default function HowItWorksPage() {
         <section id="preview" className="panel scroll-mt-24">
           <div className="panel-head">
             <span>About devnet</span>
-            <span className="chip border-warn/30 text-warn">test SOL only</span>
+            <span className="chip border-warn/30 text-warn">test funds only</span>
           </div>
           <div className="grid gap-5 p-5 text-sm leading-relaxed text-muted lg:grid-cols-3 lg:p-6">
             <p>
               <span className="font-semibold text-ink">The escrow is live on devnet.</span> Pools, launches on pump.fun&apos;s devnet, claims and refunds
-              are real transactions on Solana&apos;s test network. Devnet SOL is free and worth nothing.
+              are real transactions on Solana&apos;s test network. Devnet SOL and USDC are free and worth nothing.
             </p>
             <p>
               <span className="font-semibold text-ink">To join a pool:</span> switch your wallet (Phantom, Solflare, Backpack) to devnet, get free SOL
               at{" "}
               <a className="text-ink underline" href="https://faucet.solana.com" target="_blank" rel="noopener noreferrer">
                 faucet.solana.com
-              </a>
-              , then join. Your wallet signs the deposit and your holder-rewards vote in one transaction.
+              </a>{" "}
+              (and devnet USDC at{" "}
+              <a className="text-ink underline" href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer">
+                faucet.circle.com
+              </a>{" "}
+              for USDC pools), then join. Your wallet signs the deposit and your holder-rewards vote in one transaction.
             </p>
             <p>
               <span className="font-semibold text-ink">Check everything yourself.</span> Every pool shows its escrow address, and every deposit, launch,

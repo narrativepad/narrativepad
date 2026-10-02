@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Avatar, Icon, short, StageBadge, TeamBadge } from "@/components/bits";
-import { formatSol, formatTokens } from "@/lib/math";
+import { formatTokens } from "@/lib/math";
+import { formatTotals, withUnit } from "@/lib/units";
 import { entryLabel, FIELD_LABEL, type Field } from "@/lib/messages";
 import { displayName } from "@/lib/names";
 import type { Stage } from "@/lib/phase";
@@ -32,7 +33,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ wallet
   const { wallet } = await params;
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet)) notFound();
   const p = await profile(wallet);
-  const deposited = p.positions.reduce((s, x) => s + BigInt(x.amount), 0n);
+  const deposited = formatTotals(p.positions);
   const claimed = p.claims.reduce((s, c) => s + BigInt(c.tokens), 0n);
   const name = displayName(wallet);
 
@@ -57,7 +58,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ wallet
             [
               ["Narratives", p.created.length],
               ["Votes", p.votes.length],
-              ["In pools", `${formatSol(deposited)} SOL`],
+              ["In pools", deposited],
               ["Claimed", formatTokens(claimed)],
               ["Creator rank", p.rank.creator ? `#${p.rank.creator}` : "-"],
               ["Winning picks", p.rank.picks],
@@ -91,7 +92,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ wallet
               <li key={x.slug}>
                 <Link href={`/n/${x.slug}`} className="flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-white/[0.03]">
                   <span className="min-w-0 flex-1 truncate font-medium">{x.name ?? "Unnamed"}</span>
-                  <span className="num">{formatSol(BigInt(x.amount))} SOL</span>
+                  <span className="num">{withUnit(x.amount, x.unit)}</span>
                   <span className="num w-24 text-right text-xs text-dim">
                     {x.refunded ? "refunded" : `${formatTokens(BigInt(x.tokensClaimed))} claimed`}
                   </span>
@@ -128,7 +129,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ wallet
               <li key={`r${i}`}>
                 <Link href={`/n/${r.slug}`} className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.03]">
                   <span className="rounded-full bg-danger/15 px-2 py-0.5 text-[0.68rem] font-semibold text-danger">Refund</span>
-                  <span className="num flex-1 text-right">{formatSol(BigInt(r.amount))} SOL</span>
+                  <span className="num flex-1 text-right">{withUnit(r.amount, r.unit)}</span>
                 </Link>
               </li>
             ))}

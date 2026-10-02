@@ -11,6 +11,7 @@ import { canonicalJson, fromHex, lockHash, merkleRoot, sha256Hex, uuidBytes } fr
 import { COMMENT_MAX_LINES, COMMENT_MAX_WORDS, countWords, FIELDS, normaliseComment, REQUIRED_FIELDS, type Field } from "./messages";
 import { HIDE_THRESHOLD, moderateText } from "./moderation";
 import { knownPair, SOL_PAIR, type PairOption } from "./pairs";
+import { poolCurrency } from "./pools";
 import { pumpPairs } from "./pumpPairs";
 
 const MAX_SUBMISSIONS_PER_WALLET_PER_FIELD = 3;
@@ -74,6 +75,10 @@ export async function createNarrative(v: Verified<"create">): Promise<{ id: stri
   const name = p.name ? normaliseEntry("name", p.name) : null;
   const ticker = p.ticker ? normaliseEntry("ticker", p.ticker) : null;
   const image = p.image ? normaliseEntry("image", p.image) : null;
+  // The creator picks the pair (D-024): one pump.fun accepts that a pool can hold today.
+  const pair = normaliseEntry("pair", p.pair, await pumpPairs());
+  const pool = poolCurrency(pair);
+  if (!pool) throw new HttpError(400, `${pair} pools open with the mainnet launch. Pick SOL or USDC for now`);
 
   const id = randomUUID();
   const slug = bs58.encode(randomBytes(6));
@@ -85,26 +90,26 @@ export async function createNarrative(v: Verified<"create">): Promise<{ id: stri
     launchWindowSec: config.launchWindowSec,
     trancheCount: config.trancheCount,
     trancheIntervalSec: config.trancheIntervalSec,
-    poolCap: config.poolCap.toString(),
-    poolMin: config.poolMin.toString(),
-    perWalletMax: config.perWalletMax.toString(),
-    minDeposit: config.minDeposit.toString(),
+    // Limits in the pool currency's base units (D-023).
+    pool: pool.unit.symbol,
+    poolCap: pool.limits.poolCap.toString(),
+    poolMin: pool.limits.poolMin.toString(),
+    perWalletMax: pool.limits.perWalletMax.toString(),
+    minDeposit: pool.limits.minDeposit.toString(),
     feeBps: config.feeBps,
   };
 
   await transaction(async (tx) => {
     await tx.query(
-      `INSERT INTO narratives (id, slug, chain, creator_wallet, pitch, source_url, stage, vote_ends_at, config, create_message, create_signature)
-       VALUES ($1,$2,$3,$4,$5,$6,'voting',$7,$8,$9,$10)`,
-      [id, slug, config.chain, v.wallet, p.pitch, p.sourceUrl ?? null, voteEndsAt, JSON.stringify(snapshot), v.message, v.signature],
+      `INSERT INTO narratives (id, slug, chain, creator_wallet, pitch, source_url, stage, vote_ends_at, config, create_message, create_signature, pair)
+       VALUES ($1,$2,$3,$4,$5,$6,'voting',$7,$8,$9,$10,$11)`,
+      [id, slug, config.chain, v.wallet, p.pitch, p.sourceUrl ?? null, voteEndsAt, JSON.stringify(snapshot), v.message, v.signature, pair],
     );
-    // The creator's suggestions, then SOL as the default pair (a tie goes to the earliest entry,
-    // so SOL wins unless another pair gets more votes). Link ballots are off for now (D-018).
+    // The creator's suggestions are the first ballot entries. Link ballots are off for now (D-018).
     const seeds: [Field, string | null][] = [
       ["name", name],
       ["ticker", ticker],
       ["image", image],
-      ["pair", SOL_PAIR.symbol],
     ];
     for (const [field, value] of seeds) {
       if (!value) continue;
@@ -128,7 +133,7 @@ async function votingNarrative(narrativeId: string) {
 export async function addSubmission(v: Verified<"submit">): Promise<{ id: string }> {
   const { narrativeId, field } = v.payload;
   await votingNarrative(narrativeId);
-  const value = normaliseEntry(field, v.payload.value, field === "pair" ? await pumpPairs() : []);
+  const value = normaliseEntry(field, v.payload.value);
   const mine = await q1<{ c: string }>(
     `SELECT COUNT(*)::text AS c FROM submissions WHERE narrative_id = $1 AND field = $2 AND submitter_wallet = $3`,
     [narrativeId, field, v.wallet],
@@ -289,9 +294,15 @@ export async function finalizeVoting(narrativeId: string): Promise<void> {
     const metadataUri = `${config.publicUrl}/api/metadata/${narrativeId}`;
     const winnerIds = Object.fromEntries(FIELDS.filter((f) => win[f]).map((f) => [f, win[f]!.id]));
     // How the coin launches. Hashed into details, so the on-chain lock hash commits to it too.
-    // Creator fees are not here: the pool votes on them with its deposits (D-019).
-    const pair = win.pair?.value ?? SOL_PAIR.symbol;
-    const pairMint = (await pumpPairs()).find((o) => o.symbol === pair)?.mint ?? knownPair(pair)?.mint ?? null;
+    // Creator fees are not here: the pool votes on them with its deposits (D-019). The pair is
+    // the creator's (D-024); narratives from before voted on it.
+    const pair = n.pair ?? win.pair?.value ?? SOL_PAIR.symbol;
+    // The mint the pool holds on this chain (devnet USDC differs from mainnet's).
+    const pairMint =
+      (pair === SOL_PAIR.symbol ? SOL_PAIR.mint : poolCurrency(pair)?.unit.mint) ??
+      (await pumpPairs()).find((o) => o.symbol === pair)?.mint ??
+      knownPair(pair)?.mint ??
+      null;
     const launch = { venue: "pump.fun", pair, pairMint };
     const detailsHash = sha256Hex(canonicalJson({ narrativeId, chain: config.chain, metadata, votesRoot, winners: winnerIds, launch }));
     const hash = lockHash(uuidBytes(narrativeId), name, symbol, metadataUri, fromHex(detailsHash));
@@ -304,6 +315,12 @@ export async function finalizeVoting(narrativeId: string): Promise<void> {
   }
 
   const c = typeof n.config === "string" ? JSON.parse(n.config) : n.config;
+  // The snapshot's limits are in this currency. Older narratives (no `pool`) pool SOL.
+  const pool = poolCurrency(c.pool ?? SOL_PAIR.symbol);
+  if (!pool) {
+    console.error(`createEscrow skipped for ${narrativeId}: no pool currency for ${c.pool}`);
+    return;
+  }
   const start = new Date();
   const depositEnd = new Date(start.getTime() + c.depositWindowSec * 1000);
   const launchAfter = new Date(depositEnd.getTime() + c.launchDelaySec * 1000);
@@ -328,6 +345,7 @@ export async function finalizeVoting(narrativeId: string): Promise<void> {
       launchDeadline,
       trancheCount: c.trancheCount,
       trancheIntervalSec: c.trancheIntervalSec,
+      pool: { unit: pool.unit, viaQuoteControl: pool.viaQuoteControl },
     });
   } catch (e) {
     if (!(e instanceof ChainError)) throw e;

@@ -455,3 +455,63 @@ Format: date — decision — why — alternatives considered — decided by.
   - (3) "pay with SOL" via Jupiter on mainnet: the wallet swaps and deposits in one
     transaction.
 - **Decided by:** owner ("start devnet", "why can't it happen without my wallets") + Claude.
+
+### D-024 · 2026-10-02 · The creator picks the pair; USDC pools on the site (D-023 stage 2)
+- **Decision:**
+  - Whoever starts a narrative picks its pair; there is no pair ballot.
+  - The pair is part of the signed create message and stored on the narrative, then committed
+    in the lock (`launch.pair`, `launch.pairMint`) as before.
+  - Name, ticker and image are still voted.
+- **Why:** owner ("make the guy that makes narrative still add a pair himself"). It also fits
+  D-023: a token pool holds the pair token, so the pool's currency must be known before
+  anyone deposits, which a vote that ends at lock time can't give.
+- **Which pairs can be picked:**
+  - SOL and USDC, on both the simulation and devnet (`POOL_PAIRS` in `pairs.ts`).
+  - Every other pump.fun pair is listed with its logo but locked ("Mainnet"). Tokenized
+    stocks and wrapped coins don't exist on devnet. On mainnet they need "pay with SOL"
+    (stage 3).
+  - The server rejects a locked pair, so the API can't be used to get around the UI.
+- **Pair picker:**
+  - A search dialog replaces the plain select box: search, All / Crypto / Stocks tabs, open
+    pairs first, keyboard navigation, and a bottom sheet on phones.
+  - Logos are bundled in `public/pairs/<mint>.webp` (96×96, ~186 KB for all 41), downloaded
+    by `scripts/pair-logos.mjs` from each token's own metadata image (xStocks, Backpack,
+    Hex Trust) or the Solana token list (SOL, USDC, WBTC, WETH).
+  - Bundled logos mean no hotlinking. A pair pump.fun adds later gets its metadata image
+    live, or a monogram.
+- **USDC pools on the site:**
+  - Every escrow row records its pool token (`quote_*` columns; NULL = SOL).
+  - Every amount is shown in the pool's unit (`units.ts`): pool cards, panel, charts,
+    holders, activity, alerts, portfolio and profile.
+  - Totals are summed per currency and never added across SOL and USDC. The leaderboard's
+    "raised" counts SOL pools only, and top pools rank by how full they are.
+  - Devnet uses Circle's devnet USDC (`4zMMC9…DncDU`, SPL Token, 6 decimals).
+  - Deposits are wallet-signed `deposit_token` from the depositor's token account. Launch,
+    claim and refund use the token instructions.
+  - Token pools show a warning: the issuer can freeze USDC, which would hold up deposits and
+    refunds.
+- **Limits (`POOL_CAP_USDC` etc.):**
+  - Defaults are cap 8, minimum 1, 4 per wallet and 0.5 minimum deposit (USDC).
+  - pump's devnet USDC curve starts with only 4.292 USDC of virtual reserves (mainnet:
+    4,292), so the escrow's 90% fill check stops a devnet pool at about 8.5 USDC. A unit test
+    pins this.
+- **Fits as is:** a USDC launch is 990 bytes with the existing lookup table (limit 1232), so
+  no new table is needed.
+- **Also fixed:**
+  - The site's program error table lacked the four D-023 errors.
+  - Live alerts for on-chain deposits showed "0 SOL".
+- **Order of deploys:** the site's SOL instructions now pass the `PoolQuote` account and
+  launch puts it before pump's accounts. The devnet program must be upgraded to the D-023
+  build (`5c6ca42`, sha256 `8f21d8c9…`) **before** this site deploys, or launches fail. The
+  new build is 656,128 bytes and the program data holds 510,208, so it needs
+  `solana program extend` first (DEPLOY.md).
+- **Verified:**
+  - `sim-e2e.ts` 23/23: USDC pick, NVDAx refused, no pair ballot, USDC limits, deposits, vote
+    in USDC, launch with a 0.04 USDC fee and no reserve, and a USDC refund.
+  - `ui-e2e.mjs` 68/68, with the picker driven in the browser and a USDC pool deposited and
+    refunded through the UI.
+  - Unit tests 13/13, typecheck and production build.
+  - `devnet-e2e.ts` gained a USDC run (needs the upgraded program and 3 devnet USDC on the
+    funder); not run yet.
+- **Decided by:** owner (the creator picks the pair, logos in the picker, "make it premium
+  like pump.fun", "do whatever you need to make it work") + Claude (design).

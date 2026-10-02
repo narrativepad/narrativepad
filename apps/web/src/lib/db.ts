@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS narratives (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS narratives_stage_idx ON narratives(stage);
+-- D-024: the pair, picked by the creator. NULL on older narratives, which voted on it.
+ALTER TABLE narratives ADD COLUMN IF NOT EXISTS pair TEXT;
 CREATE INDEX IF NOT EXISTS narratives_creator_idx ON narratives(creator_wallet);
 
 CREATE TABLE IF NOT EXISTS submissions (
@@ -111,6 +113,14 @@ ALTER TABLE escrows ADD COLUMN IF NOT EXISTS holder_votes_off BIGINT NOT NULL DE
 ALTER TABLE escrows ADD COLUMN IF NOT EXISTS holder_rewards BOOLEAN;
 -- D-021: newest escrow transaction already read back from the chain (CHAIN=solana).
 ALTER TABLE escrows ADD COLUMN IF NOT EXISTS sync_sig TEXT;
+-- D-023: a token pool's token (NULL = SOL pool); amounts in this escrow's rows are its base
+-- units. curve_reserves is pump's starting virtual quote reserves, for estimates only.
+ALTER TABLE escrows ADD COLUMN IF NOT EXISTS quote_symbol TEXT;
+ALTER TABLE escrows ADD COLUMN IF NOT EXISTS quote_mint TEXT;
+ALTER TABLE escrows ADD COLUMN IF NOT EXISTS quote_decimals INT;
+ALTER TABLE escrows ADD COLUMN IF NOT EXISTS quote_program TEXT;
+ALTER TABLE escrows ADD COLUMN IF NOT EXISTS quote_via_control BOOLEAN;
+ALTER TABLE escrows ADD COLUMN IF NOT EXISTS curve_reserves BIGINT;
 
 CREATE TABLE IF NOT EXISTS receipts (
   narrative_id TEXT NOT NULL REFERENCES narratives(id),
