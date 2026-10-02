@@ -2,7 +2,18 @@
 
 import { useState } from "react";
 import { canonicalJson, fromHex, lockHash, sha256Hex, uuidBytes } from "@/lib/math";
+import { entryLabel, type Field } from "@/lib/messages";
 import type { NarrativeDetail } from "@/lib/views";
+
+function Labelled({ field, value }: { field: Field; value: string }) {
+  const { title, sub } = entryLabel(field, value);
+  return (
+    <span title={field === "fees" ? value : undefined}>
+      <span className="text-ink">{title}</span>
+      {sub && <span className="block text-dim">{sub}</span>}
+    </span>
+  );
+}
 
 /** Shows the locked metadata and recomputes both hashes in the browser, no trust in our server needed. */
 export function LockPanel({ n }: { n: NarrativeDetail }) {
@@ -16,14 +27,14 @@ export function LockPanel({ n }: { n: NarrativeDetail }) {
       const metadata = JSON.parse(text);
       const servedMatches = canonicalJson(metadata) === l.metadataJson;
       const details = sha256Hex(
-        canonicalJson({ narrativeId: n.id, chain: n.chain, metadata, votesRoot: l.votesRoot, winners: l.winners }),
+        canonicalJson({ narrativeId: n.id, chain: n.chain, metadata, votesRoot: l.votesRoot, winners: l.winners, launch: l.launch ?? undefined }),
       );
       const lh = lockHash(uuidBytes(n.id), l.name, l.symbol, l.metadataUri, fromHex(details));
       const ok = servedMatches && details === l.detailsHash && lh === l.lockHash;
       setResult({
         ok,
         detail: ok
-          ? "Metadata, winners and vote root hash to the lock hash."
+          ? "Metadata, launch settings, winners and vote root hash to the lock hash."
           : `Mismatch: served metadata ${servedMatches ? "ok" : "differs"}, details ${details === l.detailsHash ? "ok" : "differs"}, lock ${lh === l.lockHash ? "ok" : "differs"}`,
       });
     } catch (e) {
@@ -46,12 +57,15 @@ export function LockPanel({ n }: { n: NarrativeDetail }) {
       </div>
       <div className="p-4">
         <p className="mb-3 text-sm text-muted">
-          These are frozen. The escrow can only ever launch a coin with exactly this name, ticker and metadata. Copies launched
-          elsewhere are not the crowd&apos;s coin.
+          These are frozen. The escrow can only ever launch a coin with exactly this name, ticker, metadata and launch settings.
+          Copies launched elsewhere are not the crowd&apos;s coin.
         </p>
         <dl className="divide-y divide-line">
           {row("Name", <span className="font-medium text-ink">{l.name}</span>)}
           {row("Ticker", <span className="num text-ink">${l.symbol}</span>)}
+          {l.launch && row("Launches on", <span className="text-ink">{l.launch.venue}</span>)}
+          {l.launch && row("Pair", <Labelled field="pair" value={l.launch.pair} />)}
+          {l.launch && row("Creator fees", <Labelled field="fees" value={l.launch.fees} />)}
           {l.links.twitter && row("X", <a className="text-info hover:underline" href={l.links.twitter} target="_blank" rel="noopener noreferrer nofollow">{l.links.twitter}</a>)}
           {l.links.telegram && row("Telegram", <a className="text-info hover:underline" href={l.links.telegram} target="_blank" rel="noopener noreferrer nofollow">{l.links.telegram}</a>)}
           {l.links.website && row("Website", <a className="text-info hover:underline" href={l.links.website} target="_blank" rel="noopener noreferrer nofollow">{l.links.website}</a>)}

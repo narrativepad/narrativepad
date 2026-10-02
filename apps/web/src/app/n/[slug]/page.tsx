@@ -165,7 +165,7 @@ function HeroStats({ n }: { n: NarrativeDetail }) {
 }
 
 const STAGE_LINE: Record<Stage, string> = {
-  voting: "Voting is open. Pick the name, ticker, image and links.",
+  voting: "Voting is open. Pick the name, ticker, image, pair and fees.",
   pooling: "Locked. The pool is open and everyone gets the same price.",
   launching: "Pool closed. The coin is created and the whole pool buys in, in one transaction.",
   live: "Launched by the community pool.",
@@ -305,7 +305,7 @@ export default async function NarrativePage({ params }: { params: Promise<{ slug
                 </div>
                 <ol className="space-y-5 p-5 text-[0.88rem] leading-relaxed text-muted">
                   {[
-                    ["lock", "Lock", "The winning name, ticker, image and links are frozen and hashed."],
+                    ["lock", "Lock", "The winning name, ticker, image, pair and fee choice are frozen and hashed."],
                     ["coins", "Pool", "A public pool opens. Everyone who joins gets the same price."],
                     ["rocket", "Launch", "The coin is created and the whole pool buys in, in one transaction."],
                     ["spark", "Release", "Tokens unlock to everyone in equal tranches. Pool too small? Everyone gets 100% back."],

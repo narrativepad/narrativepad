@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatSol, formatTokens } from "@/lib/math";
-import { FIELD_LABEL, type Field } from "@/lib/messages";
+import { entryLabel, FIELD_LABEL, type Field } from "@/lib/messages";
 import type { ActivityItem } from "@/lib/views";
 import { Who } from "./bits";
 
@@ -53,7 +53,7 @@ export function Activity({ items, className = "" }: { items: ActivityItem[]; cla
                   <span className="text-dim">an image</span>
                 ) : (
                   <>
-                    <span className="font-medium text-ink">{a.field === "ticker" ? `$${a.value}` : a.value?.replace(/^https:\/\//, "")}</span>
+                    <span className="font-medium text-ink">{entryLabel(a.field as Field, a.value ?? "").title}</span>
                     <span className="text-dim"> · {label}</span>
                   </>
                 );

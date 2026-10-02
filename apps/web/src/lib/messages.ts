@@ -3,17 +3,44 @@
 // signature can only ever authorise the action shown to the user. Signing is free (no tx).
 import { z } from "zod";
 
-export const FIELDS = ["name", "ticker", "image", "x", "telegram", "website"] as const;
-export type Field = (typeof FIELDS)[number];
+/** Ballots shown, voted on and locked (D-018). The link ballots (x, telegram, website) are
+ *  switched off while the launch flow is being tested; their code paths stay for later. */
+export const FIELDS = ["name", "ticker", "image", "pair", "fees"] as const;
+export const LINK_FIELDS = ["x", "telegram", "website"] as const;
+export type Field = (typeof FIELDS)[number] | (typeof LINK_FIELDS)[number];
 export const FIELD_LABEL: Record<Field, string> = {
   name: "Name",
   ticker: "Ticker",
   image: "Image",
+  pair: "Pair",
+  fees: "Creator fees",
   x: "X / Twitter",
   telegram: "Telegram",
   website: "Website",
 };
 export const REQUIRED_FIELDS: Field[] = ["name", "ticker"];
+
+// The coin always launches on pump.fun (D-018). The crowd votes on what it trades against and
+// where pump.fun's creator fees go. Fixed options are seeded when a narrative is created; the
+// first listed wins on a tie (earliest entry), so SOL and the escrow split are the defaults.
+export const PAIRS = ["SOL", "USDC", "USD1"] as const;
+export const FEE_PRESETS = ["split", "holders"] as const;
+/** Pairs a real launch can use today; the escrow pools SOL. */
+export const LIVE_PAIRS = new Set<string>(["SOL"]);
+export const SOL_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+/** How an entry reads on screen (ballots, activity, lock panel). */
+export function entryLabel(field: Field, value: string): { title: string; sub?: string } {
+  if (field === "ticker") return { title: `$${value}` };
+  if (field === "pair") return { title: `${value} pair`, sub: LIVE_PAIRS.has(value) ? "trades against SOL on pump.fun" : "preview only for now; real launches pair with SOL" };
+  if (field === "fees") {
+    if (value === "split") return { title: "Split the fees", sub: "50% to the pool, 30% to the creator, 20% to the platform" };
+    if (value === "holders") return { title: "Holder rewards", sub: "pump.fun shares creator fees with the coin's holders" };
+    return { title: `Wallet ${value.slice(0, 4)}…${value.slice(-4)}`, sub: "all creator fees go to this wallet" };
+  }
+  if (field === "x" || field === "telegram" || field === "website") return { title: value.replace(/^https:\/\//, "") };
+  return { title: value };
+}
 
 /** Chat limits (D-016): text only, up to 300 words across at most 30 lines. */
 export const COMMENT_MAX_WORDS = 300;
@@ -42,7 +69,6 @@ export const payloadSchemas = {
     name: z.string().trim().min(1).max(32).optional(),
     ticker: z.string().trim().min(1).max(10).optional(),
     image: z.string().regex(/^\/api\/images\/[a-f0-9]{64}$/).optional(),
-    x: httpsUrl.optional(),
   }),
   submit: z.object({ narrativeId: id, field: z.enum(FIELDS), value: z.string().trim().min(1).max(300) }),
   vote: z.object({ narrativeId: id, field: z.enum(FIELDS), submissionId: id }),
@@ -81,7 +107,6 @@ function lines<A extends Action>(action: A, p: Payload<A>, simulation: boolean):
         ["Suggested name", c.name ?? "-"],
         ["Suggested ticker", c.ticker ?? "-"],
         ["Suggested image", c.image ?? "-"],
-        ["Suggested X", c.x ?? "-"],
       ];
     }
     case "submit": {

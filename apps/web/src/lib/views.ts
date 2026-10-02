@@ -6,7 +6,7 @@ import { chain } from "./chain";
 import { config } from "./config";
 import { big, date, q, q1 } from "./db";
 import { proRata, unlockedTranches, vested } from "./math";
-import { FIELDS, type Field } from "./messages";
+import { FEE_PRESETS, FIELDS, type Field } from "./messages";
 import { entries, winners, type Entry } from "./narratives";
 import { phaseOf, stageFromPhase, type Phase, type Stage } from "./phase";
 
@@ -260,11 +260,14 @@ export async function feed(limit = 120): Promise<NarrativeCard[]> {
 
 // ---- activity -------------------------------------------------------------------------------
 
+/** Seeded pair and fee options (D-018) are not anyone's submission. */
+const NOT_PRESET = `field <> 'pair' AND NOT (field = 'fees' AND value IN (${FEE_PRESETS.map((f) => `'${f}'`).join(",")}))`;
+
 const ACTIVITY_SQL = (where: string) => `
   (SELECT 'vote' AS kind, v.narrative_id, v.voter_wallet AS wallet, v.field, s.value, NULL::text AS amount, v.created_at AS at
      FROM votes v JOIN submissions s ON s.id = v.submission_id ${where.replace(/narrative_id/g, "v.narrative_id")})
   UNION ALL
-  (SELECT 'submit', narrative_id, submitter_wallet, field, value, NULL, created_at FROM submissions ${where} ${where ? "AND" : "WHERE"} NOT hidden)
+  (SELECT 'submit', narrative_id, submitter_wallet, field, value, NULL, created_at FROM submissions ${where} ${where ? "AND" : "WHERE"} NOT hidden AND ${NOT_PRESET})
   UNION ALL
   (SELECT 'deposit', narrative_id, wallet, NULL, NULL, amount::text, created_at FROM deposits ${where})
   UNION ALL
@@ -330,6 +333,8 @@ export interface NarrativeDetail {
     symbol: string;
     image: string | null;
     links: { twitter: string | null; telegram: string | null; website: string | null };
+    /** Venue, pair and creator-fee choice (D-018). Null on locks made before it existed. */
+    launch: { venue: string; pair: string; fees: string } | null;
     metadataUri: string;
     metadataJson: string;
     detailsHash: string;
@@ -412,6 +417,7 @@ export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | n
       symbol: lock.symbol,
       image: lock.image,
       links,
+      launch: typeof lock.launch === "string" ? JSON.parse(lock.launch) : (lock.launch ?? null),
       metadataUri: lock.metadata_uri,
       metadataJson: lock.metadata_json,
       detailsHash: lock.details_hash,

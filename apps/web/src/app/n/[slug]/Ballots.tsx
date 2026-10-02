@@ -6,7 +6,7 @@ import { Portal } from "@/components/Portal";
 import { useToast } from "@/components/Providers";
 import { useMine } from "@/lib/client/useMine";
 import { useSigned } from "@/lib/client/useSigned";
-import { FIELD_LABEL, FIELDS, REQUIRED_FIELDS, type Field } from "@/lib/messages";
+import { entryLabel, FEE_PRESETS, FIELD_LABEL, FIELDS, LINK_FIELDS, REQUIRED_FIELDS, type Field } from "@/lib/messages";
 import { displayName } from "@/lib/names";
 import type { NarrativeDetail } from "@/lib/views";
 
@@ -14,15 +14,26 @@ const PLACEHOLDER: Record<Field, string> = {
   name: "Suggest a name",
   ticker: "Suggest a ticker",
   image: "",
+  pair: "",
+  fees: "Or paste a wallet for the fees",
   x: "https://x.com/…",
   telegram: "https://t.me/…",
   website: "https://…",
 };
 
+/** One-line explainer under the ballot title. */
+const HINT: Partial<Record<Field, string>> = {
+  pair: "What the coin trades against on pump.fun.",
+  fees: "Where pump.fun's creator fees go after launch.",
+};
+
+/** Options everyone starts with: shown without a "by …" credit. */
+const isPreset = (field: Field, value: string) => field === "pair" || (field === "fees" && (FEE_PRESETS as readonly string[]).includes(value));
+
 type Entry = NarrativeDetail["ballots"][Field]["entries"][number];
 const pctOf = (votes: number, total: number) => (total > 0 ? (votes / total) * 100 : 0);
 
-/** All six ballots as a responsive grid. Read-only (winners marked) once voting has ended. */
+/** All ballots as a responsive grid. Read-only (winners marked) once voting has ended. */
 export function Ballots({ n, version }: { n: NarrativeDetail; version: string }) {
   const open = n.stage === "voting" && Date.parse(n.voteEndsAt) > Date.now();
   const { votes: myVotes } = useMine(n.id, version);
@@ -51,7 +62,7 @@ function VoteButton({ open, mine, voted, busy, label, onVote }: { open: boolean;
   );
 }
 
-function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: Field; open: boolean; myVote?: string }) {
+function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: (typeof FIELDS)[number]; open: boolean; myVote?: string }) {
   const b = n.ballots[field];
   const { run, busy } = useSigned();
   const toast = useToast();
@@ -102,6 +113,7 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: Fi
           {b.entries.length} entr{b.entries.length === 1 ? "y" : "ies"} · {b.total} vote{b.total === 1 ? "" : "s"}
         </span>
       </div>
+      {HINT[field] && <p className="border-b border-white/[0.06] px-5 py-2 text-[0.72rem] text-dim">{HINT[field]}</p>}
 
       {b.entries.length === 0 ? (
         <p className="flex-1 px-5 py-5 text-sm text-dim">{open ? "No entries yet. Add the first one." : "No entries."}</p>
@@ -137,7 +149,7 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: Fi
             const lead = e.id === b.leaderId;
             const mine = myVote === e.id;
             const pct = pctOf(e.votes, b.total);
-            const isLink = field === "x" || field === "telegram" || field === "website";
+            const isLink = (LINK_FIELDS as readonly string[]).includes(field);
             return (
               <li key={e.id} className={`relative overflow-hidden rounded-xl px-3 py-2 ${mine ? "ring-1 ring-inset ring-accent/40" : ""}`}>
                 <div
@@ -152,10 +164,18 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: Fi
                         {e.value.replace(/^https:\/\//, "")}
                       </a>
                     ) : (
-                      <span className={`block truncate text-sm font-medium ${field === "ticker" ? "num" : ""}`}>{field === "ticker" ? `$${e.value}` : e.value}</span>
+                      <span className={`block truncate text-sm font-medium ${field === "ticker" ? "num" : ""}`} title={field === "fees" ? e.value : undefined}>
+                        {entryLabel(field, e.value).title}
+                      </span>
                     )}
                     <span className="flex min-w-0 items-center gap-1.5 text-[0.7rem] text-dim" title={e.submitter}>
-                      <span className="truncate">by {displayName(e.submitter)}</span> {e.isTeam && <TeamBadge />}
+                      {isPreset(field, e.value) ? (
+                        <span className="truncate">{entryLabel(field, e.value).sub}</span>
+                      ) : (
+                        <>
+                          <span className="truncate">by {displayName(e.submitter)}</span> {e.isTeam && <TeamBadge />}
+                        </>
+                      )}
                       {lead && <span className="shrink-0 font-semibold text-accent">· {leaderWord}</span>}
                       {mine && <span className="shrink-0 font-semibold text-ink">· Your vote</span>}
                     </span>
@@ -164,7 +184,7 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: Fi
                     <span className="block text-sm font-semibold leading-tight">{e.votes}</span>
                     <span className="block text-[0.68rem] text-dim">{pct.toFixed(0)}%</span>
                   </span>
-                  {voteButton(e, e.value)}
+                  {voteButton(e, entryLabel(field, e.value).title)}
                 </div>
               </li>
             );
@@ -172,7 +192,7 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: Fi
         </ul>
       )}
 
-      {open && (
+      {open && field !== "pair" && (
         <div className="border-t border-white/[0.06] p-2.5">
           {field === "image" ? (
             <div className="flex items-center gap-3">
@@ -199,7 +219,7 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: Fi
               <input
                 className={`input h-9 py-0 text-[0.82rem] ${field === "ticker" ? "num uppercase" : ""}`}
                 placeholder={PLACEHOLDER[field]}
-                maxLength={field === "name" ? 32 : field === "ticker" ? 11 : 300}
+                maxLength={field === "name" ? 32 : field === "ticker" ? 11 : field === "fees" ? 44 : 300}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 aria-label={`New ${FIELD_LABEL[field]} entry`}

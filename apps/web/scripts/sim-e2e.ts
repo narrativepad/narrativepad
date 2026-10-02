@@ -75,11 +75,21 @@ async function main() {
   assert.equal(dup.status, 409);
   const badTicker = await carol.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field: "ticker", value: "BINANCE" });
   assert.equal(badTicker.status, 400, "impersonation filter");
-  const badLink = await carol.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field: "x", value: "https://evil.com/x" });
-  assert.equal(badLink.status, 400, "X link must be x.com");
-  const xLink = await carol.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field: "x", value: "https://x.com/mooncat" });
-  assert.equal(xLink.status, 200);
-  ok("submissions: duplicate rejected, impersonation + bad link filtered");
+  ok("submissions: duplicate rejected, impersonation filtered");
+
+  // ---- launch settings (D-018) ---------------------------------------------------------------
+  const submit = (w: Wallet, field: any, value: string) => w.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field, value });
+  assert.equal((await submit(carol, "x", "https://x.com/mooncat")).status, 400, "link ballots are off");
+  assert.equal((await submit(carol, "pair", "BONK")).status, 400, "pair must be SOL, USDC or USD1");
+  assert.equal((await submit(carol, "pair", "usdc")).status, 409, "every pair is already on the ballot");
+  assert.equal((await submit(carol, "fees", "not a wallet")).status, 400, "fees go to a preset or a wallet");
+  const feeWallet = await submit(carol, "fees", dave.address);
+  assert.equal(feeWallet.status, 200, JSON.stringify(feeWallet.data));
+  let n = await detail(slug);
+  assert.deepEqual(n.ballots.pair.entries.map((e: any) => e.value), ["SOL", "USDC", "USD1"]);
+  assert.deepEqual(n.ballots.fees.entries.map((e: any) => e.value), ["split", "holders", dave.address]);
+  assert.equal(n.ballots.x, undefined);
+  ok("pair ballot is SOL/USDC/USD1 only; fee ballot takes the presets or a wallet; link ballots off");
 
   const fd = new FormData();
   fd.append("file", new Blob([PNG], { type: "image/png" }), "cat.png");
@@ -90,19 +100,18 @@ async function main() {
   ok("image uploaded (content-addressed) and submitted");
 
   const withPic = await bob.signed("/api/narratives", "create", {
-    pitch: "A narrative started with its own picture and X account.",
+    pitch: "A narrative started with its own picture.",
     name: "Picture Coin",
     ticker: "PIC",
     image: up.path,
-    x: "https://x.com/picturecoin",
   });
   assert.equal(withPic.status, 200, JSON.stringify(withPic.data));
   const pic = await detail(withPic.data.slug);
   assert.equal(pic.ballots.image.entries[0].value, up.path);
-  assert.equal(pic.ballots.x.entries[0].value, "https://x.com/picturecoin");
-  ok("narrative created with a picture + X link → both become first ballot entries");
+  assert.equal(pic.ballots.pair.entries.length, 3);
+  ok("narrative created with a picture → first image entry; pair and fee options seeded");
 
-  let n = await detail(slug);
+  n = await detail(slug);
   const entry = (field: string, value: string) => n.ballots[field].entries.find((e: any) => e.value === value).id;
   const vote = (w: Wallet, field: any, value: string) =>
     w.signed(`/api/narratives/${id}/vote`, "vote", { narrativeId: id, field, submissionId: entry(field, value) });
@@ -111,8 +120,12 @@ async function main() {
   assert.equal((await vote(alice, "name", "Moon Cat")).status, 200);
   for (const w of [alice, bob, carol]) assert.equal((await vote(w, "ticker", "MCAT")).status, 200);
   assert.equal((await vote(dave, "image", up.path)).status, 200);
-  assert.equal((await vote(carol, "x", "https://x.com/mooncat")).status, 200);
-  ok("8 signed votes accepted");
+  // USDC gets one vote but SOL two; the fee wallet beats holder rewards two to one.
+  assert.equal((await vote(carol, "pair", "USDC")).status, 200);
+  for (const w of [alice, dave]) assert.equal((await vote(w, "pair", "SOL")).status, 200);
+  for (const w of [carol, dave]) assert.equal((await vote(w, "fees", dave.address)).status, 200);
+  assert.equal((await vote(bob, "fees", "holders")).status, 200);
+  ok("14 signed votes accepted across name, ticker, image, pair and fees");
 
   assert.equal((await vote(bob, "name", "Moon Cat")).status, 409);
   ok("second vote on the same field rejected");
@@ -166,10 +179,12 @@ async function main() {
   assert.equal(n.lock.symbol, "MCAT");
   assert.equal(n.stage, "pooling");
   const metadata = await (await fetch(n.lock.metadataUri.replace(/^https?:\/\/[^/]+/, BASE))).json();
-  const details = sha256Hex(canonicalJson({ narrativeId: id, chain: n.chain, metadata, votesRoot: n.lock.votesRoot, winners: n.lock.winners }));
+  assert.deepEqual(n.lock.launch, { venue: "pump.fun", pair: "SOL", fees: dave.address });
+  assert.equal(metadata.twitter, undefined, "no links in the coin metadata");
+  const details = sha256Hex(canonicalJson({ narrativeId: id, chain: n.chain, metadata, votesRoot: n.lock.votesRoot, winners: n.lock.winners, launch: n.lock.launch }));
   assert.equal(details, n.lock.detailsHash);
   assert.equal(lockHash(uuidBytes(id), n.lock.name, n.lock.symbol, n.lock.metadataUri, fromHex(details)), n.lock.lockHash);
-  ok(`locked "Moon Kitty" $MCAT; lock hash recomputed independently: ${n.lock.lockHash.slice(0, 16)}…`);
+  ok(`locked "Moon Kitty" $MCAT on pump.fun, SOL pair, fees to a voted wallet; lock hash recomputed: ${n.lock.lockHash.slice(0, 16)}…`);
 
   const audit = await (await fetch(`${BASE}/api/narratives/${id}/votes`)).json();
   for (const v of audit.votes) {

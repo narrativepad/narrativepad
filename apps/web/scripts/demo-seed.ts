@@ -93,8 +93,7 @@ async function narrative(creator: W, s: Spec, images: string[]) {
   }
   await sub(crowd[3], "image", images[s.art]);
   await sub(crowd[4], "image", images[(s.art + 5) % images.length]);
-  if (s.x) await sub(crowd[5], "x", s.x);
-  await sub(crowd[6], "telegram", `https://t.me/${s.ticker.toLowerCase()}portal`);
+  if (s.voters % 2 === 1) await sub(crowd[5], "fees", crowd[5].address);
   const d = await (await fetch(`${BASE}/api/n/${slug}`)).json();
   const id0 = (field: string, i = 0) => d.ballots[field].entries[i]?.id;
   const chatter = [
@@ -112,8 +111,9 @@ async function narrative(creator: W, s: Spec, images: string[]) {
     await v("name", id0("name", i % 4 === 0 && d.ballots.name.entries.length > 1 ? 1 : 0));
     await v("ticker", id0("ticker", i % 5 === 0 && d.ballots.ticker.entries.length > 1 ? 1 : 0));
     await v("image", id0("image", i % 3 === 0 ? 1 : 0));
-    if (i % 2 === 0) await v("telegram", id0("telegram"));
-    if (s.x && i % 3 === 1) await v("x", id0("x"));
+    // Pair entries are SOL, USDC, USD1; fees are split, holders, then any submitted wallet.
+    if (i % 2 === 0) await v("pair", id0("pair", i % 6 === 4 ? 1 : 0));
+    if (i % 3 !== 2) await v("fees", id0("fees", Math.min(i % 3, d.ballots.fees.entries.length - 1)));
   }
   return { id, slug };
 }

@@ -10,7 +10,7 @@ import { useSigned } from "@/lib/client/useSigned";
 const TIPS: [string, string][] = [
   ["Be specific", "“A cat that refuses to leave the moon” beats “a space coin”."],
   ["Add the source", "The tweet, clip or article the narrative comes from."],
-  ["Suggest, don't decide", "Your name, ticker and picture are the first ballot entries. The crowd votes."],
+  ["Suggest, don't decide", "Your name, ticker and picture are the first ballot entries. The crowd votes on them, the pair and the fees."],
   ["Keep it original", "Impersonating real brands or people is blocked."],
 ];
 
@@ -24,7 +24,6 @@ export function CreateForm() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
-  const [x, setX] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [drag, setDrag] = useState(false);
@@ -33,8 +32,7 @@ export function CreateForm() {
 
   const cleanTicker = ticker.replace(/^\$/, "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
   const sourceOk = !sourceUrl || /^https:\/\/\S+\.\S+/.test(sourceUrl);
-  const xOk = !x || /^https:\/\/(x|twitter)\.com\/[A-Za-z0-9_]{1,15}(\/.*)?$/.test(x);
-  const valid = pitch.trim().length >= 10 && pitch.length <= 280 && sourceOk && xOk && !uploading;
+  const valid = pitch.trim().length >= 10 && pitch.length <= 280 && sourceOk && !uploading;
   const title = name.trim() || "Untitled narrative";
 
   async function upload(file: File) {
@@ -63,7 +61,6 @@ export function CreateForm() {
       name: name.trim() || undefined,
       ticker: cleanTicker || undefined,
       image: image ?? undefined,
-      x: x.trim() || undefined,
     });
     if (out?.slug) router.push(`/n/${out.slug}`);
   }
@@ -179,17 +176,11 @@ export function CreateForm() {
               />
             </div>
             <div>
-              <label htmlFor="x" className="label">
-                X account
-              </label>
-              <input
-                id="x"
-                className={`input mt-1.5 ${xOk ? "" : "border-danger/60"}`}
-                placeholder="https://x.com/…"
-                inputMode="url"
-                value={x}
-                onChange={(ev) => setX(ev.target.value)}
-              />
+              <span className="label">Launch</span>
+              <div className="mt-1.5 flex h-[2.85rem] items-center gap-2 rounded-xl border border-line bg-white/[0.02] px-3.5 text-[0.82rem] text-muted">
+                <span className="font-medium text-ink">pump.fun</span>
+                <span className="truncate">· the crowd votes on pair and creator fees</span>
+              </div>
             </div>
           </div>
 
@@ -203,7 +194,7 @@ export function CreateForm() {
           </ul>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3.5">
-          <p className="text-xs text-dim">Voting opens right away and runs for {Math.round(cfg.voteDurationSec / 60)} minutes.</p>
+          <p className="text-xs text-dim">Voting opens right away and runs for {Math.round(cfg.voteDurationSec / 60)} minute{Math.round(cfg.voteDurationSec / 60) === 1 ? "" : "s"}.</p>
           <button type="submit" className="btn-primary px-5 py-2.5" disabled={!valid || busy !== null}>
             {busy ? "Starting…" : "Start narrative"}
           </button>
@@ -276,7 +267,7 @@ export function CreateForm() {
             {(
               [
                 ["Voting", `${Math.round(cfg.voteDurationSec / 60)} min. Anyone can add entries and vote, one vote per person per field.`, "bg-violet"],
-                ["Lock", "The winning name, ticker, picture and links are frozen and hashed.", "bg-accent"],
+                ["Lock", "The winning name, ticker, picture, pair and fee choice are frozen and hashed.", "bg-accent"],
                 ["Pool", `${Math.round(cfg.depositWindowSec / 60)} min public pool. Same price for everyone who joins.`, "bg-info"],
                 ["Launch", "The coin is created and the whole pool buys in, in one transaction.", "bg-gold"],
                 ["Release", `Tokens unlock to everyone in ${cfg.trancheCount} equal tranches.`, "bg-accent"],

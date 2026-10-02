@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Avatar, Icon, short, StageBadge, TeamBadge } from "@/components/bits";
 import { formatSol, formatTokens } from "@/lib/math";
-import { FIELD_LABEL, type Field } from "@/lib/messages";
+import { entryLabel, FIELD_LABEL, type Field } from "@/lib/messages";
 import { displayName } from "@/lib/names";
 import type { Stage } from "@/lib/phase";
 import { profile } from "@/lib/views";
@@ -107,7 +107,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ wallet
               <li key={i}>
                 <Link href={`/n/${v.slug}`} className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.03]">
                   <span className="label w-20 shrink-0">{FIELD_LABEL[v.field as Field]}</span>
-                  <span className="min-w-0 flex-1 truncate">{v.field === "image" ? "an image" : v.value}</span>
+                  <span className="min-w-0 flex-1 truncate">{v.field === "image" ? "an image" : entryLabel(v.field as Field, v.value).title}</span>
                 </Link>
               </li>
             ))}

@@ -21,7 +21,7 @@ function chainKind(): ChainKind {
 
 export const config = {
   chain: chainKind(),
-  voteDurationSec: num("VOTE_DURATION_SEC", 600),
+  voteDurationSec: num("VOTE_DURATION_SEC", 180),
   depositWindowSec: num("DEPOSIT_WINDOW_SEC", 600),
   launchDelaySec: num("LAUNCH_DELAY_SEC", 120),
   launchWindowSec: num("LAUNCH_WINDOW_SEC", 1800),

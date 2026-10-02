@@ -8,7 +8,18 @@ import { config } from "./config";
 import { date, q, q1, transaction } from "./db";
 import { publish } from "./events";
 import { canonicalJson, fromHex, lockHash, merkleRoot, sha256Hex, uuidBytes } from "./math";
-import { COMMENT_MAX_LINES, COMMENT_MAX_WORDS, countWords, FIELDS, normaliseComment, REQUIRED_FIELDS, type Field } from "./messages";
+import {
+  COMMENT_MAX_LINES,
+  COMMENT_MAX_WORDS,
+  countWords,
+  FEE_PRESETS,
+  FIELDS,
+  normaliseComment,
+  PAIRS,
+  REQUIRED_FIELDS,
+  SOL_ADDRESS_RE,
+  type Field,
+} from "./messages";
 import { HIDE_THRESHOLD, moderateText } from "./moderation";
 
 const MAX_SUBMISSIONS_PER_WALLET_PER_FIELD = 3;
@@ -33,6 +44,15 @@ export function normaliseEntry(field: Field, raw: string): string {
     }
     case "image":
       if (!IMAGE_PATH_RE.test(v)) fail("Upload an image first");
+      return v;
+    case "pair": {
+      const p = v.toUpperCase();
+      if (!(PAIRS as readonly string[]).includes(p)) fail(`Pick one of: ${PAIRS.join(", ")}`);
+      return p;
+    }
+    case "fees":
+      if ((FEE_PRESETS as readonly string[]).includes(v)) return v;
+      if (!SOL_ADDRESS_RE.test(v)) fail("Paste a Solana wallet address for the fees");
       return v;
     case "x":
       if (!/^https:\/\/(x|twitter)\.com\/[A-Za-z0-9_]{1,15}(\/.*)?$/.test(v)) fail("Must be an https://x.com/… link");
@@ -66,7 +86,6 @@ export async function createNarrative(v: Verified<"create">): Promise<{ id: stri
   const name = p.name ? normaliseEntry("name", p.name) : null;
   const ticker = p.ticker ? normaliseEntry("ticker", p.ticker) : null;
   const image = p.image ? normaliseEntry("image", p.image) : null;
-  const x = p.x ? normaliseEntry("x", p.x) : null;
 
   const id = randomUUID();
   const slug = bs58.encode(randomBytes(6));
@@ -91,7 +110,16 @@ export async function createNarrative(v: Verified<"create">): Promise<{ id: stri
        VALUES ($1,$2,$3,$4,$5,$6,'voting',$7,$8,$9,$10)`,
       [id, slug, config.chain, v.wallet, p.pitch, p.sourceUrl ?? null, voteEndsAt, JSON.stringify(snapshot), v.message, v.signature],
     );
-    for (const [field, value] of [["name", name], ["ticker", ticker], ["image", image], ["x", x]] as const) {
+    // The creator's suggestions, then the fixed pair and fee options in default-first order (a
+    // tie goes to the earliest entry). Link ballots are off for now (D-018).
+    const seeds: [Field, string | null][] = [
+      ["name", name],
+      ["ticker", ticker],
+      ["image", image],
+      ...PAIRS.map((pair): [Field, string] => ["pair", pair]),
+      ...FEE_PRESETS.map((fee): [Field, string] => ["fees", fee]),
+    ];
+    for (const [field, value] of seeds) {
       if (!value) continue;
       await tx.query(
         `INSERT INTO submissions (id, narrative_id, field, value, submitter_wallet, message, signature) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -273,12 +301,14 @@ export async function finalizeVoting(narrativeId: string): Promise<void> {
     // Simulation serves metadata from our API. On-chain mode pins it to IPFS (content-addressed).
     const metadataUri = `${config.publicUrl}/api/metadata/${narrativeId}`;
     const winnerIds = Object.fromEntries(FIELDS.filter((f) => win[f]).map((f) => [f, win[f]!.id]));
-    const detailsHash = sha256Hex(canonicalJson({ narrativeId, chain: config.chain, metadata, votesRoot, winners: winnerIds }));
+    // How the coin launches. Hashed into details, so the on-chain lock hash commits to it too.
+    const launch = { venue: "pump.fun", pair: win.pair?.value ?? PAIRS[0], fees: win.fees?.value ?? FEE_PRESETS[0] };
+    const detailsHash = sha256Hex(canonicalJson({ narrativeId, chain: config.chain, metadata, votesRoot, winners: winnerIds, launch }));
     const hash = lockHash(uuidBytes(narrativeId), name, symbol, metadataUri, fromHex(detailsHash));
     await q(
-      `INSERT INTO locks (narrative_id, name, symbol, image, links, metadata_json, metadata_uri, details_hash, lock_hash, votes_root, winners)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (narrative_id) DO NOTHING`,
-      [narrativeId, name, symbol, image, JSON.stringify(links), metadataJson, metadataUri, detailsHash, hash, votesRoot, JSON.stringify(winnerIds)],
+      `INSERT INTO locks (narrative_id, name, symbol, image, links, metadata_json, metadata_uri, details_hash, lock_hash, votes_root, winners, launch)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (narrative_id) DO NOTHING`,
+      [narrativeId, name, symbol, image, JSON.stringify(links), metadataJson, metadataUri, detailsHash, hash, votesRoot, JSON.stringify(winnerIds), JSON.stringify(launch)],
     );
     lock = await q1<any>(`SELECT * FROM locks WHERE narrative_id = $1`, [narrativeId]);
   }

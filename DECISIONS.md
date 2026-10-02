@@ -228,3 +228,35 @@ Format: date — decision — why — alternatives considered — decided by.
     picture.
 - **Verified:** `ui-e2e.mjs` 62/62 and `smoke.mjs` passing; screenshots at 1440 and 390 px.
 - **Decided by:** owner (request) + Claude (design).
+
+### D-018 · 2026-10-02 · Launch settings on the ballot; links off; 3-minute voting
+- **Decision:**
+  - **Venue:** every coin launches on pump.fun. Other venues (e.g. OTC desks) were considered
+    and dropped: they are not a public, atomic create-and-buy the escrow can verify.
+  - **Pair ballot:** SOL, USDC or USD1. All three are seeded when a narrative is created, so
+    nobody can add other values. SOL is first and wins ties. **Only SOL is real for now**:
+    the escrow pools lamports, and a USDC/USD1 launch would need the escrow to hold SPL
+    tokens and pass that quote mint to `create_v2`. The UI labels the other two "preview only".
+  - **Creator-fee ballot:** "split" (the escrow's frozen 50% pool / 30% creator / 20%
+    platform split, D-006), "holders" (pump.fun holder rewards, `is_holder_reward`), or any
+    Solana wallet someone submits. Split is first and wins ties.
+  - **Link ballots off:** X, Telegram and website are no longer shown, submitted or put in the
+    coin metadata, and the create form's X field is gone. The code paths stay in
+    `LINK_FIELDS` so they can come back. Ballots are now name, ticker, image, pair, fees.
+  - **Lock:** `locks.launch = {venue, pair, fees}` is part of the hashed details, so the
+    on-chain lock hash commits to it, and "Verify in browser" checks it. Older locks have
+    no `launch` and still verify.
+  - **Voting:** `VOTE_DURATION_SEC` default 180 (was 600).
+- **Not done yet (needs the escrow program, then an audit):** `launch` currently hard-codes
+  `is_holder_reward = false` and the escrow as `creator`. Honouring "holders" means setting
+  that flag; honouring a voted wallet means passing it as `creator` (or forwarding from
+  `distribute_creator_fees`). Both change where money goes, so they go through the program,
+  its tests and the audit, not the web app.
+- **Risk:** a voted fee wallet is sybil-able. Guest keys are free, so a few hundred throwaway
+  keys can vote their own wallet in. Before real money, voting on fees must be weighted or
+  gated (e.g. by deposit, or only depositors' votes count) or the wallet option dropped.
+- **Verified:** `sim-e2e.ts` 20/20 (pair/fee validation, launch settings in the lock and
+  hash, deposit → launch → claims, refund path), `ui-e2e.mjs` 65/65 with no console errors,
+  and `smoke.mjs` passing.
+- **Decided by:** owner ("only pump but with possibility to choose pair", "crowd votes on
+  both", holder rewards or a fee wallet, 3 min) + Claude (design).

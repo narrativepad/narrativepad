@@ -63,7 +63,7 @@ await pic.setContent('<body style="margin:0;background:radial-gradient(circle at
 const png2 = await pic.screenshot({ type: "png" });
 await pic.close();
 
-async function createViaUI({ pitch, name, ticker, source, x, image }) {
+async function createViaUI({ pitch, name, ticker, source, image }) {
   await page.goto(`${base}/create`, { waitUntil: "load" });
   if (image) {
     await page.setInputFiles('input[type="file"]', { name: "pic.png", mimeType: "image/png", buffer: image });
@@ -73,7 +73,6 @@ async function createViaUI({ pitch, name, ticker, source, x, image }) {
   await page.fill("#name", name);
   await page.fill("#ticker", ticker);
   if (source) await page.fill("#source", source);
-  if (x) await page.fill("#x", x);
   await page.click('button[type="submit"]:has-text("Start narrative")');
   await page.waitForURL(/\/n\/[A-Za-z0-9]+$/, { timeout: 15_000 });
   return page.url();
@@ -104,13 +103,12 @@ await check("how-it-works tiles render (6 steps + 4 guarantees)", async () => {
 // ---- create A (with picture), then interact during voting --------------------------------------
 section = "create";
 let urlA;
-await check("guest creates a narrative with picture, source and X link", async () => {
+await check("guest creates a narrative with picture and source", async () => {
   urlA = await createViaUI({
     pitch: "QA coin: a golden retriever that audits smart contracts for treats.",
     name: "Audit Dog",
     ticker: "AUDOG",
     source: "https://x.com/narrativepad/status/42",
-    x: "https://x.com/auditdog",
     image: png,
   });
 });
@@ -143,7 +141,21 @@ await check("vote on a name", async () => {
   await page.locator('button[aria-label="Vote for Audit Dog"]', { hasText: "Voted" }).waitFor({ timeout: 5000 });
 });
 await check("vote on a ticker", async () => {
-  await page.click('button[aria-label="Vote for AUDOG"]');
+  await page.click('button[aria-label="Vote for $AUDOG"]');
+  await toast(/Vote counted/);
+});
+await check("only name, ticker, image, pair and fee ballots; no link ballots", async () => {
+  for (const t of ["Pair", "Creator fees"]) await page.locator(".panel-head", { hasText: t }).first().waitFor({ timeout: 3000 });
+  if (await page.locator(".panel-head", { hasText: /X \/ Twitter|Telegram|Website/ }).count()) throw new Error("link ballots are still shown");
+  if (await page.locator('input[aria-label="New Pair entry"]').count()) throw new Error("pair ballot takes free-text entries");
+});
+await check("vote SOL pair; add a wallet to the fee ballot and vote for it", async () => {
+  await page.click('button[aria-label="Vote for SOL pair"]');
+  await toast(/Vote counted/);
+  await page.fill('input[aria-label="New Creator fees entry"]', "So11111111111111111111111111111111111111112");
+  await page.locator('form:has(input[aria-label="New Creator fees entry"]) button').click();
+  await toast(/Entry added/);
+  await page.click('button[aria-label="Vote for Wallet So11…1112"]');
   await toast(/Vote counted/);
 });
 await check("upload an image entry", async () => {
@@ -271,7 +283,13 @@ await check("deposit list shows both deposits in order", async () => {
 });
 await check("lock hash verifies in the browser", async () => {
   await page.click('button:has-text("Verify in browser")');
-  await waitText("Metadata, winners and vote root hash to the lock hash", 8000);
+  await waitText("Metadata, launch settings, winners and vote root hash to the lock hash", 8000);
+});
+await check("locked launch settings: pump.fun, SOL pair, voted fee wallet", async () => {
+  const lock = page.locator("section", { hasText: "Locked metadata" });
+  await lock.getByText("pump.fun", { exact: true }).waitFor({ timeout: 3000 });
+  await lock.getByText("SOL pair", { exact: true }).waitFor({ timeout: 3000 });
+  await lock.getByText("Wallet So11…1112", { exact: true }).waitFor({ timeout: 3000 });
 });
 await check("bonding curve chart shows where the pool buys", async () => {
   await page.click('button[role="tab"]:has-text("Bonding curve")');

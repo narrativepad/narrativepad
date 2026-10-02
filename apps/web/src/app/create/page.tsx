@@ -16,7 +16,7 @@ export default async function CreatePage() {
       <div className="flex flex-wrap items-end justify-between gap-3 px-1">
         <div>
           <h1 className="text-[2.2rem] font-semibold leading-tight tracking-[-0.04em] sm:text-[2.8rem]"><span className="text-silver">Start a </span><span className="display text-gradient pr-2 text-[1.06em]">narrative</span></h1>
-          <p className="text-sm text-muted">A short pitch and a source. The crowd decides the name, ticker, image and links.</p>
+          <p className="text-sm text-muted">A short pitch and a source. The crowd decides the name, ticker, image, pair and fees.</p>
         </div>
         <div className="flex gap-2 text-xs text-dim">
           <span className="chip">voting {Math.round(config.voteDurationSec / 60)} min</span>

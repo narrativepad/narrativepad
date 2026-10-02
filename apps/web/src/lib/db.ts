@@ -71,6 +71,8 @@ CREATE TABLE IF NOT EXISTS locks (
   winners JSONB NOT NULL,
   locked_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- D-018: venue, pair and creator-fee choice; part of details_hash. NULL on older locks.
+ALTER TABLE locks ADD COLUMN IF NOT EXISTS launch JSONB;
 
 CREATE TABLE IF NOT EXISTS escrows (
   narrative_id TEXT PRIMARY KEY REFERENCES narratives(id),
