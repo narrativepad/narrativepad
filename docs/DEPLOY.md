@@ -69,6 +69,15 @@ solana program deploy "$env:TEMP\narrative_escrow.so" --program-id target\deploy
 solana program show 42bwRMxcnpbfiH1K68dGuVkgEWdZoWY72fZ7VVVcbVrY --url devnet
 ```
 
+Then the one-time setup, signed by the upgrade authority (operator key:
+`~/.config/solana/narrativepad-devnet-operator.json`, address `Atj9Fqh2Xn9ut7Jtu16jMAYmtvL3e9UFtUXaUYL61sH9`;
+devnet treasury = the deploy key):
+
+```powershell
+cd apps\web
+node scripts/devnet-init-config.mjs $key Atj9Fqh2Xn9ut7Jtu16jMAYmtvL3e9UFtUXaUYL61sH9 8JU2abVm7cNS7FQwegZyEGyC7BkaJXzdAmBATLg84Wed 0.5
+```
+
 The same `deploy` command upgrades the program later. Mainnet uses a different authority (a
 multisig with a timelock) and only after an external audit; see ARCHITECTURE.md (Q10) and CLAUDE.md.
 
