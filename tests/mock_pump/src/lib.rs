@@ -173,7 +173,10 @@ pub mod mock_pump {
             require!(out >= min_tokens_out, MockError::Slippage);
         }
 
-        let take = if m == mode::OVERSPEND { spendable_quote_in + 200_000_000 } else { spendable_quote_in };
+        // OVERSPEND takes a little more than asked, but no more than the vault holds above its
+        // reserve. A larger grab fails in the System Program before the escrow's post-condition
+        // runs, which is safe but wouldn't exercise the check this mode exists to test.
+        let take = if m == mode::OVERSPEND { spendable_quote_in + 20_000_000 } else { spendable_quote_in };
         system_program::transfer(
             CpiContext::new(
                 a.system_program.key(),
