@@ -135,6 +135,10 @@ The escrow is designed so that no one, including the team, can move user funds o
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: devnet only, no secrets in code, log decisions in `DECISIONS.md`, and keep `math.ts` and `math.rs` in lockstep.
 
+## License
+
+[MIT](LICENSE).
+
 ## Disclaimer
 
 Memecoins are extremely risky and can go to zero. Nothing in this repository or on the site is financial advice. narrativepad is in preview and is not affiliated with pump.fun.
