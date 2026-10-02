@@ -78,7 +78,7 @@ export async function createNarrative(v: Verified<"create">): Promise<{ id: stri
   // The creator picks the pair (D-024): one pump.fun accepts that a pool can hold today.
   const pair = normaliseEntry("pair", p.pair, await pumpPairs());
   const pool = poolCurrency(pair);
-  if (!pool) throw new HttpError(400, `${pair} pools open with the mainnet launch. Pick SOL or USDC for now`);
+  if (!pool) throw new HttpError(400, `${pair} pools open with the mainnet launch. Pick SOL for now`);
 
   const id = randomUUID();
   const slug = bs58.encode(randomBytes(6));
@@ -297,7 +297,7 @@ export async function finalizeVoting(narrativeId: string): Promise<void> {
     // Creator fees are not here: the pool votes on them with its deposits (D-019). The pair is
     // the creator's (D-024); narratives from before voted on it.
     const pair = n.pair ?? win.pair?.value ?? SOL_PAIR.symbol;
-    // The mint the pool holds on this chain (devnet USDC differs from mainnet's).
+    // The mint the pool holds on this chain (a token's devnet mint can differ from mainnet's).
     const pairMint =
       (pair === SOL_PAIR.symbol ? SOL_PAIR.mint : poolCurrency(pair)?.unit.mint) ??
       (await pumpPairs()).find((o) => o.symbol === pair)?.mint ??

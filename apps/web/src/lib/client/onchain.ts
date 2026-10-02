@@ -22,7 +22,6 @@ const FRIENDLY: Record<string, string> = {
 /** Where to get free test funds on devnet. */
 export const FAUCET = {
   SOL: { name: "faucet.solana.com", url: "https://faucet.solana.com" },
-  USDC: { name: "faucet.circle.com", url: "https://faucet.circle.com" },
 } as const;
 const noFunds = (symbol: string) =>
   symbol in FAUCET ? `Not enough devnet ${symbol}. Get free test ${symbol} at ${FAUCET[symbol as keyof typeof FAUCET].name}` : `Not enough ${symbol}`;

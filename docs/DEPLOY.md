@@ -100,10 +100,6 @@ node --experimental-strip-types scripts/devnet-create-alt.ts "$env:USERPROFILE\.
 Railway variables: `CHAIN=solana`, `LAUNCH_ALT=<table>`, and the pool limits the program
 allows on devnet: `POOL_CAP_SOL=0.5`, `POOL_MIN_SOL=0.1`, `PER_WALLET_MAX_SOL=0.25`,
 `MIN_DEPOSIT_SOL=0.01`. `HELIUS_API_KEY` (already set) makes the server use Helius devnet.
-USDC pools (D-024) default to cap 8, minimum 1, 4 per wallet, 0.5 minimum deposit, which fit
-pump's small devnet USDC curve; override with `POOL_CAP_USDC`, `POOL_MIN_USDC`,
-`PER_WALLET_MAX_USDC`, `MIN_DEPOSIT_USDC`. Devnet USDC is free at https://faucet.circle.com
-(pick Solana Devnet).
 
 **Order matters when the escrow's accounts change:** upgrade the devnet program first, then
 deploy the site. The site from D-024 on passes the D-023 `PoolQuote` account, which the older

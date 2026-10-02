@@ -13,7 +13,7 @@ const fmt = (v: number, format: Format) => {
     if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
     return Math.floor(v).toLocaleString("en-US");
   }
-  // Currency amounts in whole units (SOL, USDC…): up to 3 decimals, no trailing zeros (matches formatAmount).
+  // Currency amounts in whole units (SOL, a pool token…): up to 3 decimals, no trailing zeros (matches formatAmount).
   const s = (Math.floor(v * 1000) / 1000).toFixed(3).replace(/\.?0+$/, "");
   const [w, f] = s.split(".");
   return `${Number(w).toLocaleString("en-US")}${f ? `.${f}` : ""}`;

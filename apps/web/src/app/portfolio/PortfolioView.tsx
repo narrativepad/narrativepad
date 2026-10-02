@@ -276,7 +276,7 @@ function Position({
   );
 }
 
-/** What a wallet has in pools, per currency (SOL and USDC pools don't add up). */
+/** What a wallet has in pools, per currency (amounts in different currencies don't add up). */
 function Totals({ items }: { items: PortfolioItem[] }) {
   return (
     <span className="flex flex-col">

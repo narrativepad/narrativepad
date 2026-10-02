@@ -5,7 +5,7 @@ import "server-only";
 import { PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
 import { pairLogo, resolvePairLogos } from "./pairLogos";
-import { BY_MINT, PUMP_PAIRS_SNAPSHOT, SOL_PAIR, type PairOption } from "./pairs";
+import { BY_MINT, offered, PUMP_PAIRS_SNAPSHOT, SOL_PAIR, type PairOption } from "./pairs";
 
 const RPC = process.env.PUMP_RPC_URL || "https://api.mainnet-beta.solana.com";
 /** pump.fun PDAs: seeds ["global"] and ["quote-control"] under 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P. */
@@ -111,5 +111,6 @@ export async function pumpPairs({ wait = true } = {}): Promise<PairOption[]> {
       .finally(() => (inflight = null));
     if (wait) await inflight;
   }
-  return cached.list;
+  // pump.fun accepts USDC, but narrativepad offers no USD pairs (D-025).
+  return cached.list.filter(offered);
 }

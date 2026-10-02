@@ -1,4 +1,4 @@
-// A pool's currency (D-023): SOL, or a token pool's token (USDC on devnet; NVDAx etc. later).
+// A pool's currency (D-023): SOL, or a token pool's token (NVDAx etc., with the mainnet launch).
 // Escrow amounts are base units of that currency; these helpers show and parse them.
 import { PUMP } from "./math.ts";
 
@@ -36,7 +36,7 @@ export function formatAmount(raw: bigint, unit: Unit, maxDecimals = 3): string {
   return `${neg ? "-" : ""}${whole.toLocaleString("en-US")}${frac ? "." + frac : ""}`;
 }
 
-/** An amount with its symbol: "1.5 SOL", "8 USDC". */
+/** An amount with its symbol: "1.5 SOL", "4 NVDAx". */
 export const withUnit = (raw: bigint | string, unit: Unit, maxDecimals = 3) => `${formatAmount(BigInt(raw), unit, maxDecimals)} ${unit.symbol}`;
 
 /** `parseSol` for any unit: "1.5" → base units, or null if it isn't a plain decimal. */
@@ -49,7 +49,7 @@ export function parseAmount(input: string, unit: Unit): bigint | null {
 /** A base-unit amount as a float in whole units, for charts and animated numbers only. */
 export const toWhole = (raw: bigint | string, unit: Unit) => Number(BigInt(raw)) / 10 ** unit.decimals;
 
-/** Quick-pick amounts for the deposit box: SOL pools use the classic picks; stablecoins whole units. */
+/** Quick-pick amounts for the deposit box: SOL pools use the classic picks; token pools small whole units. */
 export const quickAmounts = (unit: Unit) => (unit.symbol === "SOL" ? ["0.1", "0.25", "0.5", "1"] : ["0.5", "1", "2", "4"]);
 
 /** The launch curve for estimates: token pools borrow the launch rent from the cranker, so the
@@ -69,5 +69,5 @@ export function totalsByUnit(items: { amount: bigint | string; unit: Unit }[]): 
   return list.length ? list : [{ unit: SOL_UNIT, total: 0n }];
 }
 
-/** "1.5 SOL · 4 USDC". */
+/** "1.5 SOL · 4 NVDAx". */
 export const formatTotals = (items: { amount: bigint | string; unit: Unit }[]) => totalsByUnit(items).map((t) => withUnit(t.total, t.unit)).join(" · ");

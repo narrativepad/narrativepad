@@ -114,7 +114,7 @@ await check("how-it-works tiles render (6 steps + 4 guarantees)", async () => {
 
 // ---- create A (with picture), then interact during voting --------------------------------------
 section = "create";
-await check("pair picker: pump.fun's pairs with logos, SOL and USDC open, stocks locked until mainnet", async () => {
+await check("pair picker: pump.fun's pairs with logos, SOL open, stocks locked until mainnet, no USD pairs", async () => {
   await page.goto(`${base}/create`, { waitUntil: "load" });
   await page.locator("button#pair", { hasText: "SOL" }).waitFor({ timeout: 5000 });
   await page.click("button#pair");
@@ -132,10 +132,13 @@ await check("pair picker: pump.fun's pairs with logos, SOL and USDC open, stocks
   await nvda.click({ force: true });
   if (!(await dialog.isVisible())) throw new Error("clicking a locked pair closed the picker");
   await dialog.locator('button[role="tab"]', { hasText: "Stocks" }).click();
-  if (await dialog.locator('[role="option"]', { hasText: "USDC" }).count()) throw new Error("Stocks tab shows USDC");
+  if (await dialog.locator('[role="option"]', { hasText: "Solana" }).count()) throw new Error("Stocks tab shows SOL");
+  await dialog.locator('button[role="tab"]', { hasText: "All" }).click();
+  await dialog.locator('input[aria-label="Search pairs"]').fill("USDC");
+  if (await dialog.locator('[role="option"]').count()) throw new Error("USDC is offered (no USD pairs, D-025)");
+  await dialog.locator('input[aria-label="Search pairs"]').fill("");
   await page.keyboard.press("Escape");
   await dialog.waitFor({ state: "detached", timeout: 3000 });
-  await pickPair("USDC");
   await pickPair("SOL");
 });
 let urlA;
@@ -268,8 +271,8 @@ await shot("1-voting");
 // ---- create B (for the refund path) -------------------------------------------------------------
 section = "create (refund case)";
 let urlB;
-await check("second narrative created without a picture, paired with USDC", async () => {
-  urlB = await createViaUI({ pitch: "QA coin that will not reach its pool minimum, to test refunds.", name: "Thin Coin", ticker: "THINQ", pair: "USDC" });
+await check("second narrative created without a picture", async () => {
+  urlB = await createViaUI({ pitch: "QA coin that will not reach its pool minimum, to test refunds.", name: "Thin Coin", ticker: "THINQ", pair: "SOL" });
 });
 
 // ---- pool on A -----------------------------------------------------------------------------------
@@ -346,13 +349,8 @@ await shot("2-pool");
 section = "refund case";
 await page.goto(urlB, { waitUntil: "load" });
 await check("pool opens on the second narrative", () => page.locator('button:has-text("Join the pool")').waitFor({ timeout: 60_000 }));
-await check("USDC pool: amounts in USDC and the issuer-freeze warning", async () => {
-  await page.locator('input[aria-label="Amount in USDC"]').waitFor({ timeout: 3000 });
-  await waitText("1 USDC needed to launch", 3000);
-  await waitText("its issuer can freeze", 3000);
-});
-await check("deposit 0.5 USDC (under the 1 USDC minimum)", async () => {
-  await page.click('button:text-is("0.5")');
+await check("deposit 0.25 SOL (under the 1 SOL minimum)", async () => {
+  await page.click('button:text-is("0.25")');
   await page.click('[role="radiogroup"][aria-label="Holder rewards"] [role="radio"]:text-is("Off")');
   await page.click('button:has-text("Join the pool")');
   await toast(/You're in the pool/);
@@ -382,7 +380,7 @@ section = "refund";
 await page.goto(urlB, { waitUntil: "load" });
 await check("under-minimum pool switches to refunds", () => waitText("Every depositor can take back 100%", 70_000));
 await check("refund 100% of the deposit", async () => {
-  const btn = page.locator("button", { hasText: /^Refund 0\.5 USDC/ });
+  const btn = page.locator("button", { hasText: /^Refund 0\.25 SOL/ });
   await btn.waitFor({ timeout: 10_000 });
   await btn.click();
   await toast(/Refunded in full/);

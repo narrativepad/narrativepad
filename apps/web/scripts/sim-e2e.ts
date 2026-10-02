@@ -11,7 +11,6 @@ import { buildMessage, type Action, type Payload } from "../src/lib/messages.ts"
 
 const BASE = process.argv[2] ?? "http://localhost:3100";
 const SOL = 1_000_000_000n;
-const USDC = 1_000_000n;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 class Wallet {
@@ -77,14 +76,11 @@ async function main() {
   const stock = await start("nvdax");
   assert.equal(stock.status, 400, "stock pools open with the mainnet launch");
   assert.match(stock.data.error, /mainnet/);
-  const usd = await start("usdc");
-  assert.equal(usd.status, 200, JSON.stringify(usd.data));
-  const { id: idUsd, slug: slugUsd } = usd.data;
-  let u = await detail(slugUsd);
-  assert.equal(u.pair.symbol, "USDC", "case fixed to pump.fun's symbol");
-  assert.equal(u.pair.logo, "/pairs/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.webp");
-  assert.equal(u.ballots.pair, undefined, "no pair ballot");
-  ok("pair picked at creation: USDC accepted (logo attached), NVDAx refused until mainnet, made-up pair refused");
+  assert.equal((await start("usdc")).status, 400, "no USD pairs (D-025)");
+  const main = await detail(slug);
+  assert.equal(main.pair.symbol, "SOL");
+  assert.equal(main.pair.logo, "/pairs/So11111111111111111111111111111111111111112.webp");
+  ok("pair picked at creation: SOL accepted (logo attached); NVDAx refused until mainnet; USDC and made-up pairs refused");
 
   // ---- ballots & votes -----------------------------------------------------------------------
   const kitty = await bob.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field: "name", value: "Moon Kitty" });
@@ -119,13 +115,13 @@ async function main() {
     ticker: "PIC",
     image: up.path,
     // Also the refund case below (the API allows 5 creates per IP per 10 minutes).
-    pair: "USDC",
+    pair: "SOL",
   });
   assert.equal(withPic.status, 200, JSON.stringify(withPic.data));
   const { id: id2, slug: slug2 } = withPic.data;
   const pic = await detail(slug2);
   assert.equal(pic.ballots.image.entries[0].value, up.path);
-  assert.equal(pic.pair.symbol, "USDC");
+  assert.equal(pic.pair.symbol, "SOL");
   ok("narrative created with a picture → first image entry");
 
   n = await detail(slug);
@@ -237,26 +233,9 @@ async function main() {
   ]);
   ok("deposits: 4.5 SOL in order; per-wallet cap and minimum enforced; holder-rewards vote 2.5 SOL on / 2 off");
 
-  // The USDC narrative (created at the top) locked at about the same time: its pool is in USDC.
-  u = await waitFor(slugUsd, (x) => x.escrow, "USDC escrow");
-  assert.equal(u.stage, "pooling");
-  assert.equal(u.escrow.unit.symbol, "USDC");
-  assert.equal(u.escrow.unit.decimals, 6);
-  assert.equal(u.lock.launch.pair, "USDC");
-  assert.equal(u.escrow.poolCap, (8n * USDC).toString(), "limits in USDC");
-  const depositUsd = (w: Wallet, amount: bigint, holderRewards: boolean) =>
-    w.signed(`/api/narratives/${idUsd}/deposit`, "deposit", { narrativeId: idUsd, amountLamports: amount.toString(), holderRewards });
-  assert.equal((await depositUsd(alice, 5n * USDC, true)).status, 409, "per-wallet cap is 4 USDC");
-  assert.equal((await depositUsd(alice, 3n * USDC, true)).status, 200);
-  assert.equal((await depositUsd(dave, USDC, false)).status, 200);
-  u = await detail(slugUsd);
-  assert.equal(u.escrow.totalDeposited, (4n * USDC).toString());
-  assert.equal(u.escrow.holderVotesOn, (3n * USDC).toString());
-  ok("USDC pool: limits in USDC (cap 8, 4 per wallet); 4 USDC deposited, vote counted in USDC");
-
-  // The picture narrative's USDC pool gets less than its 1 USDC minimum: the refund case below.
+  // The picture narrative's pool gets less than its 1 SOL minimum: the refund case below.
   await waitFor(slug2, (x) => x.stage === "pooling", "second escrow");
-  const d2 = await carol.signed(`/api/narratives/${id2}/deposit`, "deposit", { narrativeId: id2, amountLamports: (USDC / 2n).toString(), holderRewards: false });
+  const d2 = await carol.signed(`/api/narratives/${id2}/deposit`, "deposit", { narrativeId: id2, amountLamports: (SOL / 2n).toString(), holderRewards: false });
   assert.equal(d2.status, 200, JSON.stringify(d2.data));
 
   const earlyRefund = await alice.signed(`/api/narratives/${id}/refund`, "refund", { narrativeId: id });
@@ -300,23 +279,14 @@ async function main() {
   assert.equal((await (await fetch(`${BASE}/api/portfolio?wallet=nope`)).json()).error, "Invalid wallet");
   ok("portfolio: position, stage and claimable amount match");
 
-  // ---- the USDC pool (D-023) launches too -----------------------------------------------------
-  u = await waitFor(slugUsd, (x) => x.escrow?.launched, "USDC launch");
-  assert.equal(u.escrow.platformFee, (40_000n).toString(), "1% of 4 USDC");
-  assert.equal(u.escrow.baseLeftover, "0", "token pools keep no rent reserve");
-  assert.ok(BigInt(u.escrow.tokensBought) > 0n);
-  const folioUsd = await (await fetch(`${BASE}/api/portfolio?wallet=${alice.address}`)).json();
-  assert.equal(folioUsd.items.find((x: any) => x.narrativeId === idUsd).unit.symbol, "USDC");
-  ok(`USDC pool launched with a 0.04 USDC fee, bought ${(Number(u.escrow.tokensBought) / 1e12).toFixed(2)}M tokens`);
-
-  // ---- refund path (in USDC) -------------------------------------------------------------------
+  // ---- refund path ---------------------------------------------------------------------------
   const n2 = await waitFor(slug2, (x) => x.stage === "refunding", "refunding");
   assert.equal(n2.escrow.launched, false);
   const r1 = await carol.signed(`/api/narratives/${id2}/refund`, "refund", { narrativeId: id2 });
   assert.equal(r1.status, 200);
-  assert.equal(r1.data.amount, (USDC / 2n).toString());
+  assert.equal(r1.data.amount, (SOL / 2n).toString());
   assert.equal((await carol.signed(`/api/narratives/${id2}/refund`, "refund", { narrativeId: id2 })).status, 409);
-  ok("under-minimum USDC pool → refunding; 0.5 USDC refunded once, double refund rejected");
+  ok("under-minimum pool → refunding; 0.5 SOL refunded once, double refund rejected");
 
   console.log(`\nAll ${step} checks passed.`);
 }

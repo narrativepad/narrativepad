@@ -17,11 +17,15 @@ export const SOL_MINT = "So11111111111111111111111111111111111111112";
 const logo = (mint: string) => `/pairs/${mint}.webp`;
 export const SOL_PAIR: PairOption = { symbol: "SOL", name: "Solana", mint: SOL_MINT, kind: "crypto", logo: logo(SOL_MINT) };
 
-/** Pairs a pool can be opened in today (D-023): SOL, and USDC, pump.fun's whitelisted quote on
- *  devnet and mainnet. The rest need each depositor's wallet to swap into the pair as it joins
- *  (stage 3, mainnet only: tokenized stocks and wrapped coins don't exist on devnet). */
-export const POOL_PAIRS = new Set<string>(["SOL", "USDC"]);
+/** Pairs a pool can be opened in today: SOL. The rest need each depositor's wallet to swap into
+ *  the pair as it joins (D-023 stage 3, mainnet only: tokenized stocks and wrapped coins don't
+ *  exist on devnet). */
+export const POOL_PAIRS = new Set<string>(["SOL"]);
 export const poolReady = (symbol: string) => POOL_PAIRS.has(symbol);
+
+/** pump.fun pairs narrativepad doesn't offer at all: no USD pairs (owner, D-025). */
+export const HIDDEN_PAIRS = new Set<string>(["USDC"]);
+export const offered = (p: Pick<PairOption, "symbol">) => !HIDDEN_PAIRS.has(p.symbol);
 
 const c = (symbol: string, name: string, mint: string): PairOption => ({ symbol, name, mint, kind: "crypto", logo: logo(mint) });
 const s = (symbol: string, name: string, mint: string): PairOption => ({ symbol, name, mint, kind: "stock", logo: logo(mint) });

@@ -44,9 +44,6 @@ export const config = {
   trancheIntervalSec: num("TRANCHE_INTERVAL_SEC", 300),
   pools: {
     SOL: limits("SOL", 9, { cap: 20, min: 1, perWallet: 2, minDeposit: 0.05 }),
-    // pump's devnet USDC curve starts with 4.292 USDC of virtual reserves (mainnet: 4,292), so the
-    // escrow's 90% fill limit stops a devnet pool at about 8.5 USDC. These defaults fit devnet.
-    USDC: limits("USDC", 6, { cap: 8, min: 1, perWallet: 4, minDeposit: 0.5 }),
   } satisfies Record<string, PoolLimits>,
   feeBps: num("FEE_BPS", 100),
   teamWallets: new Set(

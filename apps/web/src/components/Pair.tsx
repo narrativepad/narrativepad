@@ -168,7 +168,7 @@ function PairPicker({ pairs, value, onPick, onClose }: { pairs: PickerPair[]; va
                 ref={input}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search SOL, USDC, NVIDIA…"
+                placeholder="Search SOL, NVIDIA, Tesla…"
                 aria-label="Search pairs"
                 aria-controls="pair-list"
                 aria-activedescendant={shown[active] ? `pair-${shown[active].mint}` : undefined}

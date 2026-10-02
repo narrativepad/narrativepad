@@ -541,3 +541,25 @@ Format: date — decision — why — alternatives considered — decided by.
   - Not yet on devnet: USDC deposits, launch, claim and refund. They need devnet USDC from
     faucet.circle.com on the funder (`8JU2…4Wed`). They are covered by the LiteSVM program
     tests and the simulation.
+
+### D-025 · 2026-10-02 · No USD pairs
+- **Decision:** narrativepad offers no USD pairs. USDC is filtered out of the pair list
+  (`HIDDEN_PAIRS` in `pairs.ts`), so it can't be picked in the UI or through the API. SOL is
+  the only pair open now; stocks and other coins stay listed, locked until mainnet.
+- **Why:** owner ("i dont want usd pair").
+- **What stays:**
+  - The token-pool machinery (D-023 program, `quote_*` columns, token deposit, launch,
+    claim and refund in the site, per-unit display). Tokenized stocks and other coins need it
+    on mainnet.
+  - USDC was only ever used as the devnet stand-in for testing it.
+- **What goes:**
+  - The USDC currency in `pools.ts` and the `POOL_*_USDC` settings.
+  - USDC copy and the Circle faucet links.
+  - The USDC parts of the simulation, browser and devnet tests.
+- **Risk:** the site's token-pool path has no end-to-end test now. The program's LiteSVM
+  tests cover token pools. The site path must get its own test before stocks open (stage 3);
+  stocks don't exist on devnet, so that needs a mainnet fork or LiteSVM run of the site's
+  instruction builders.
+- **Verified:** unit 12/12, `sim-e2e.ts` 21/21 (USDC refused like any locked pair),
+  `ui-e2e.mjs` 67/67 with the live 191-pair list (searching "USDC" finds nothing), smoke clean.
+- **Decided by:** owner.

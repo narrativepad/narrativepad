@@ -40,7 +40,7 @@ narrativepad flips that. **The crowd decides everything before the coin exists**
 | Stage | What happens | Default |
 |---|---|---|
 | **Propose** | Anyone posts a pitch and its source: a tweet, a clip, a meme. | anytime |
-| **Vote** | The creator picks the pair (SOL or USDC today; stocks and other coins with mainnet). The crowd suggests and votes on name, ticker and image. One signed vote per person per field; ties go to the earliest entry. | 3 min |
+| **Vote** | The creator picks the pair (SOL today; stocks and other coins with mainnet). The crowd suggests and votes on name, ticker and image. One signed vote per person per field; ties go to the earliest entry. | 3 min |
 | **Lock** | The winners are frozen, and a hash of the metadata is committed, so nobody (including us) can swap them. | instant |
 | **Pool** | Deposits go into one public escrow, never to a wallet anyone controls. Per-wallet max and pool cap are enforced. Each deposit also votes pump.fun holder rewards on or off, weighted by its SOL. | 10 min |
 | **Launch** | The escrow creates the coin and makes the opening buy with the whole pool, in the same transaction. | ~2 min later |
