@@ -303,3 +303,21 @@ Format: date — decision — why — alternatives considered — decided by.
   `ui-e2e.mjs` 67/67, and `smoke.mjs` passing.
 - **Decided by:** owner ("pair … stocks like nvda, pump coin", "turn cashback or not", "you do
   all the thinking") + Claude (design).
+
+### D-020 · 2026-10-02 · Devnet deploys: built by CI, deployed from the owner's PC
+- **Decision:** CI builds and tests the program and publishes the passing build as the
+  `devnet-build` pre-release (a public download; artifacts need a login). It is deployed from the
+  owner's PC with the Solana CLI, which is already installed there (no WSL needed for this).
+- **Keys:**
+  - A throwaway devnet key (`~/.config/solana/narrativepad-devnet.json`, address
+    `8JU2…4Wed`) pays for deploys and is the devnet upgrade authority. It was created on the
+    owner's PC with `solana-keygen --silent`, so its secret was never printed, committed or
+    sent anywhere.
+  - The program address `42bw…bVrY` comes from the existing `target/deploy` key file
+    (gitignored).
+- **Why not a GitHub secret:** the key would leave the owner's machine, and the owner would
+  have to paste it into GitHub. This way the owner only clicks the devnet faucet once.
+- **Alternatives:** deploying from CI with a secret; building locally (needs WSL2 for Anchor).
+- **Mainnet is unchanged:** different authority (multisig plus timelock), and only after an
+  external audit.
+- **Decided by:** owner ("start devnet", "why can't it happen without my wallets") + Claude.

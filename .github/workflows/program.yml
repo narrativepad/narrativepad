@@ -1,6 +1,7 @@
 # Builds the escrow program (and the test-only pump stand-in) and runs its unit, property and
 # LiteSVM tests on GitHub's machines, so nothing has to be installed locally.
-# Build and test only: no deploys, no keys, no secrets.
+# No deploys, no keys, no secrets. On main, a build that passed its tests is published as the
+# `devnet-build` pre-release, which docs/DEPLOY.md deploys to devnet from the owner's machine.
 name: Escrow program
 
 on:
@@ -115,3 +116,30 @@ jobs:
             target/idl/narrative_escrow.json
             target/types/narrative_escrow.ts
             Cargo.lock
+
+  # Artifacts need a GitHub login to download; a release doesn't. Only this job can write, and it
+  # only replaces the `devnet-build` pre-release with the build that just passed.
+  publish-devnet-build:
+    name: Publish devnet build
+    needs: build-and-test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: narrative-escrow-build
+          path: build
+      - name: Replace the devnet-build release
+        working-directory: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cp target/deploy/narrative_escrow.so target/idl/narrative_escrow.json .
+          sha256sum narrative_escrow.so | tee narrative_escrow.so.sha256
+          gh release delete devnet-build --cleanup-tag --yes || true
+          gh release create devnet-build narrative_escrow.so narrative_escrow.json narrative_escrow.so.sha256 \
+            --target "$GITHUB_SHA" --prerelease --title "Devnet build" \
+            --notes "Escrow program built and tested by CI from ${GITHUB_SHA}. Devnet only. Mainnet needs an external audit first (CLAUDE.md)."

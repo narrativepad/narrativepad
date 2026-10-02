@@ -26,7 +26,7 @@ railway up --service web --detach
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `VOTE_DURATION_SEC` | 600 | Voting length |
+| `VOTE_DURATION_SEC` | 180 | Voting length |
 | `DEPOSIT_WINDOW_SEC` | 600 | Pool deposit window |
 | `LAUNCH_DELAY_SEC` | 120 | Gap between pool close and launch |
 | `LAUNCH_WINDOW_SEC` | 1800 | Launch window before refunds open |
@@ -43,6 +43,34 @@ cd apps/web && npm install && npm run dev                      # embedded PGlite
 node --test --experimental-strip-types src/lib/*.test.ts       # math unit tests
 node --experimental-strip-types scripts/sim-e2e.ts http://localhost:3917   # full-flow E2E (see header for timings)
 ```
+
+## Devnet escrow program (D-020)
+
+CI builds and tests the program, then publishes the build as the
+[`devnet-build`](https://github.com/narrativepad/narrativepad/releases/tag/devnet-build) pre-release.
+It is deployed from the owner's machine with the Solana CLI (Windows works; no WSL needed), so no
+key ever goes to GitHub or anywhere else.
+
+| Key file (never in git, never printed) | Public address | Role |
+|---|---|---|
+| `~/.config/solana/narrativepad-devnet.json` | `8JU2abVm7cNS7FQwegZyEGyC7BkaJXzdAmBATLg84Wed` | Pays for deploys; devnet upgrade authority |
+| `target/deploy/narrative_escrow-keypair.json` | `42bwRMxcnpbfiH1K68dGuVkgEWdZoWY72fZ7VVVcbVrY` | Program address (`declare_id!`) |
+
+Devnet SOL is free: https://faucet.solana.com (the CLI `solana airdrop` is usually rate-limited).
+
+```powershell
+cd C:\Users\kacpe\ai\narrativepad
+$key = "$env:USERPROFILE\.config\solana\narrativepad-devnet.json"
+curl.exe -sSL -o "$env:TEMP\narrative_escrow.so" https://github.com/narrativepad/narrativepad/releases/download/devnet-build/narrative_escrow.so
+curl.exe -sSL https://github.com/narrativepad/narrativepad/releases/download/devnet-build/narrative_escrow.so.sha256   # compare:
+(Get-FileHash "$env:TEMP\narrative_escrow.so" -Algorithm SHA256).Hash.ToLower()
+solana balance -k $key --url devnet
+solana program deploy "$env:TEMP\narrative_escrow.so" --program-id target\deploy\narrative_escrow-keypair.json -k $key --url devnet
+solana program show 42bwRMxcnpbfiH1K68dGuVkgEWdZoWY72fZ7VVVcbVrY --url devnet
+```
+
+The same `deploy` command upgrades the program later. Mainnet uses a different authority (a
+multisig with a timelock) and only after an external audit; see ARCHITECTURE.md (Q10) and CLAUDE.md.
 
 ## Never
 
