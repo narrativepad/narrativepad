@@ -77,8 +77,8 @@ pub mod mock_pump {
     use super::*;
 
     #[allow(clippy::too_many_arguments)]
-    pub fn create_v2(
-        ctx: Context<CreateV2>,
+    pub fn create_v2<'info>(
+        ctx: Context<'info, CreateV2<'info>>,
         name: String,
         _symbol: String,
         _uri: String,

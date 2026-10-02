@@ -101,9 +101,11 @@ jobs:
         if: failure()
         run: |
           enc() { sed 's/%/%25/g; s/\r//g' | awk 'BEGIN{ORS="%0A"} {print}'; }
-          errs=$(grep -n -A14 -E '^(error(\[E[0-9]+\])?:|thread .* panicked|test result: FAILED|failures:)' build.log | head -n 220 | enc)
+          # rustc colours its output; strip the escape codes so "error" lines can be found.
+          sed 's/\x1b\[[0-9;]*m//g' build.log > build.plain.log
+          errs=$(grep -n -A14 -E '^(error(\[E[0-9]+\])?:|thread .* panicked|test result: FAILED|failures:|Error:)' build.plain.log | head -n 220 | enc)
           [ -n "$errs" ] && echo "::error title=Build/test errors::${errs}"
-          echo "::error title=Last 80 lines::$(tail -n 80 build.log | enc)"
+          echo "::error title=Last 80 lines::$(grep -v -E 'warning|^ *= |^ *\||^ *[0-9]+ \||^ *-->|^ *$' build.plain.log | tail -n 80 | enc)"
 
       - name: Upload build output
         if: always()
