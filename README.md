@@ -16,6 +16,7 @@
 
 <p>
   <a href="https://github.com/narrativepad/narrativepad/actions/workflows/web.yml"><img alt="Web app" src="https://github.com/narrativepad/narrativepad/actions/workflows/web.yml/badge.svg"></a>
+  <a href="https://github.com/narrativepad/narrativepad/actions/workflows/program.yml"><img alt="Escrow program" src="https://github.com/narrativepad/narrativepad/actions/workflows/program.yml/badge.svg"></a>
   <img alt="Status: preview" src="https://img.shields.io/badge/status-preview-FFD032?style=flat">
   <img alt="Solana devnet" src="https://img.shields.io/badge/Solana-devnet-016BFD?style=flat&logo=solana&logoColor=white">
   <a href="https://x.com/narrativepad"><img alt="Follow on X" src="https://img.shields.io/badge/follow-%40narrativepad-000000?style=flat&logo=x&logoColor=white"></a>
