@@ -206,3 +206,25 @@ Format: date — decision — why — alternatives considered — decided by.
 - **Verified:** `sim-e2e.ts` 19/19, `ui-e2e.mjs` 62/62 (a second visitor's message arrives
   live, headcount, unread badge, dock), and `smoke.mjs` passes.
 - **Decided by:** owner (request: "live chat … max 200–300 words, no pictures") + Claude (design).
+
+### D-017 · 2026-10-02 · Brand: X profile, mascot logo, blue + gold palette
+- **Decision:**
+  - **Logo:** the @narrativepad X profile picture (megaphone mascot on electric blue),
+    fetched at 400×400 through unavatar.io because x.com blocks automated browsers. It
+    replaces the "N" coin mark in the header, footer, share images and the hero orbit
+    centre. Assets live in `public/brand/` (`logo.png` and `logo-128.png`); the favicon and
+    app icons are `src/app/favicon.ico` (48/32/16), `icon.png` (192) and `apple-icon.png` (180).
+  - **Palette** (sampled from the logo): blue `#016BFD` for fills, with a lifted `#3D8BFF`
+    for text and strokes on black; gold `#FFD032` for serif headlines, coins, stars, "Hot"
+    badges and launching. Mint green is gone; a separate green `#3DDC97` remains only for
+    the "Live" stage. Stage colours are now voting violet, pooling blue, launching gold and
+    live green.
+  - **X:** linked in the header (icon) and footer ("Follow @narrativepad"), with
+    `twitter:site` and `twitter:creator` set to @narrativepad.
+  - **Banner:** `scripts/brand-assets.mjs` renders the X header (`public/brand/x-banner.png`
+    1500×500 and `x-banner@2x.png`) and the site-wide default share image
+    (`src/app/opengraph-image.png`, 1200×630). The style is minimal: tagline on the left, the
+    crowd orbit with gold coins on the right, and the bottom-left kept empty for X's profile
+    picture.
+- **Verified:** `ui-e2e.mjs` 62/62 and `smoke.mjs` passing; screenshots at 1440 and 390 px.
+- **Decided by:** owner (request) + Claude (design).

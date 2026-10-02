@@ -68,8 +68,8 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
           <Icon name="coins" className="h-3.5 w-3.5" /> Community pool
         </span>
         <span className="normal-case tracking-normal">
-          {e.phase === "pooling" && <Countdown to={e.depositEnd} prefix="closes in" done="closing…" className="text-info" />}
-          {(e.phase === "closing" || e.phase === "launchable") && <Countdown to={e.launchAfter} prefix="launch in" done="launching…" className="text-warn" />}
+          {e.phase === "pooling" && <Countdown to={e.depositEnd} prefix="closes in" done="closing…" className="text-accent" />}
+          {(e.phase === "closing" || e.phase === "launchable") && <Countdown to={e.launchAfter} prefix="launch in" done="launching…" className="text-gold" />}
           {e.phase === "refundable" && <span className="text-danger">Refunds open</span>}
           {e.phase === "released" && <span className="text-accent">Launched</span>}
         </span>

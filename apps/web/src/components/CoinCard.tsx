@@ -36,7 +36,7 @@ export function CoinCard({ n, href, hot = false, showTrend = false }: { n: Narra
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#0e0f12]" />
         <div className="absolute right-3 top-3 flex items-center gap-1.5">
           {hot && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[0.7rem] font-semibold text-warn ring-1 ring-inset ring-warn/30 backdrop-blur-md">
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[0.7rem] font-semibold text-gold ring-1 ring-inset ring-gold/30 backdrop-blur-md">
               <Icon name="flame" className="h-3 w-3" /> Hot
             </span>
           )}
@@ -64,8 +64,8 @@ export function CoinCard({ n, href, hot = false, showTrend = false }: { n: Narra
             <Icon name="trend" className="h-3.5 w-3.5 text-accent" />
             <span>last 15 min:</span>
             {t.votes > 0 && <span className="text-violet">+{t.votes} votes</span>}
-            {t.deposits > 0 && <span className="text-accent">+{formatSol(BigInt(t.lamports))} SOL</span>}
-            {t.comments > 0 && <span className="text-info">+{t.comments} msgs</span>}
+            {t.deposits > 0 && <span className="text-gold">+{formatSol(BigInt(t.lamports))} SOL</span>}
+            {t.comments > 0 && <span className="text-accent-2">+{t.comments} msgs</span>}
           </p>
         )}
 

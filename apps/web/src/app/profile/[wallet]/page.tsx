@@ -119,7 +119,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ wallet
             {p.claims.map((c, i) => (
               <li key={`c${i}`}>
                 <Link href={`/n/${c.slug}`} className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.03]">
-                  <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[0.68rem] font-semibold text-warn">Claim</span>
+                  <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[0.68rem] font-semibold text-gold">Claim</span>
                   <span className="num flex-1 text-right">{formatTokens(BigInt(c.tokens))} tokens</span>
                 </Link>
               </li>

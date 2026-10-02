@@ -278,7 +278,7 @@ export function CreateForm() {
                 ["Voting", `${Math.round(cfg.voteDurationSec / 60)} min. Anyone can add entries and vote, one vote per person per field.`, "bg-violet"],
                 ["Lock", "The winning name, ticker, picture and links are frozen and hashed.", "bg-accent"],
                 ["Pool", `${Math.round(cfg.depositWindowSec / 60)} min public pool. Same price for everyone who joins.`, "bg-info"],
-                ["Launch", "The coin is created and the whole pool buys in, in one transaction.", "bg-warn"],
+                ["Launch", "The coin is created and the whole pool buys in, in one transaction.", "bg-gold"],
                 ["Release", `Tokens unlock to everyone in ${cfg.trancheCount} equal tranches.`, "bg-accent"],
               ] as const
             ).map(([t, d, c]) => (

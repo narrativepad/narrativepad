@@ -6,6 +6,7 @@ import { LiveAlerts } from "@/components/LiveAlerts";
 import { ReminderRunner } from "@/components/Reminders";
 import { PreviewBanner } from "@/components/PreviewBanner";
 import { Providers } from "@/components/Providers";
+import { BRAND } from "@/lib/brand";
 import { config, publicConfig } from "@/lib/config";
 import "./globals.css";
 
@@ -18,9 +19,10 @@ export const metadata: Metadata = {
   title: { default: "narrativepad: the crowd builds the coin", template: "%s · narrativepad" },
   description:
     "Propose a narrative, vote on the name, ticker and image, then buy it together in one public pool. The official coin is the one the crowd built.",
+  twitter: { card: "summary_large_image", site: BRAND.xHandle, creator: BRAND.xHandle },
 };
 
-export const viewport: Viewport = { themeColor: "#06080b", width: "device-width", initialScale: 1 };
+export const viewport: Viewport = { themeColor: "#050607", width: "device-width", initialScale: 1 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const cfg = publicConfig();

@@ -63,8 +63,8 @@ function PoolArt() {
       <svg viewBox="0 0 80 80" className="absolute inset-0 -rotate-90">
         <defs>
           <linearGradient id="how-pool" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#5fb4ff" />
-            <stop offset="1" stopColor="#3df2a3" />
+            <stop offset="0" stopColor="#016bfd" />
+            <stop offset="1" stopColor="#8ec1ff" />
           </linearGradient>
         </defs>
         <circle cx="40" cy="40" r={r} fill="none" stroke="rgb(255 255 255 / 0.07)" strokeWidth="5" />
@@ -86,8 +86,8 @@ function LaunchArt() {
         <span className="text-dim">+</span>
         <span className="glass rounded-full px-3.5 py-1.5 text-[0.78rem] font-medium">Pool buys</span>
       </div>
-      <div className="mt-2 h-3 w-48 rounded-b-lg border-x border-b border-warn/40" />
-      <span className="mt-2 inline-flex items-center gap-1.5 text-[0.75rem] font-medium text-warn">
+      <div className="mt-2 h-3 w-48 rounded-b-lg border-x border-b border-gold/40" />
+      <span className="mt-2 inline-flex items-center gap-1.5 text-[0.75rem] font-medium text-gold">
         <Icon name="rocket" className="h-3.5 w-3.5" /> one transaction
       </span>
     </div>
@@ -115,15 +115,15 @@ export function HowItWorks() {
   const steps: { t: string; d: string; when: string; art: React.ReactNode; hex: string }[] = [
     { t: "Propose", d: "Anyone posts a pitch and its source: a tweet, a clip, a meme.", when: "anyone, any time", art: <ProposeArt />, hex: "#a3a8b0" },
     { t: "Vote", d: "The crowd suggests and votes on the name, ticker, image and links. One vote per person per field.", when: `${min(config.voteDurationSec)} min`, art: <VoteArt />, hex: "#a98bff" },
-    { t: "Lock", d: "The winners are frozen and hashed, so nobody, including us, can swap the name or image later.", when: "instant", art: <LockArt />, hex: "#3df2a3" },
-    { t: "Pool", d: "Everyone who wants in deposits into one public escrow. Every deposit is listed, in order.", when: `${min(config.depositWindowSec)} min`, art: <PoolArt />, hex: "#5fb4ff" },
-    { t: "Launch", d: "The coin is created and the whole pool buys in, in the same transaction. Nobody gets in first.", when: `~${min(config.launchDelaySec)} min later`, art: <LaunchArt />, hex: "#ffbd4a" },
+    { t: "Lock", d: "The winners are frozen and hashed, so nobody, including us, can swap the name or image later.", when: "instant", art: <LockArt />, hex: "#3d8bff" },
+    { t: "Pool", d: "Everyone who wants in deposits into one public escrow. Every deposit is listed, in order.", when: `${min(config.depositWindowSec)} min`, art: <PoolArt />, hex: "#3d8bff" },
+    { t: "Launch", d: "The coin is created and the whole pool buys in, in the same transaction. Nobody gets in first.", when: `~${min(config.launchDelaySec)} min later`, art: <LaunchArt />, hex: "#ffd032" },
     {
       t: "Release",
       d: "Tokens go back to every depositor, pro-rata, unlocking in equal steps for everyone at once.",
       when: `${config.trancheCount} × ${min(config.trancheIntervalSec)} min`,
       art: <ReleaseArt count={config.trancheCount} />,
-      hex: "#3df2a3",
+      hex: "#ffd032",
     },
   ];
   const promises: { icon: IconName; t: string; d: string }[] = [

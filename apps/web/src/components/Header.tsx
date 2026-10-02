@@ -4,7 +4,8 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useIdentity } from "@/lib/client/useSigned";
-import { Avatar, Icon, Logo } from "./bits";
+import { BRAND } from "@/lib/brand";
+import { Avatar, Icon, Logo, XIcon } from "./bits";
 import { CommandPalette, openPalette } from "./CommandPalette";
 
 const WalletButton = dynamic(
@@ -88,6 +89,16 @@ export function Header() {
           >
             <Icon name="search" className="h-4 w-4" />
           </button>
+          <a
+            href={BRAND.x}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`narrativepad on X (${BRAND.xHandle})`}
+            title={`Follow ${BRAND.xHandle} on X`}
+            className="hidden h-[2.375rem] w-[2.375rem] items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-muted transition-colors hover:text-ink md:flex"
+          >
+            <XIcon className="h-[0.95rem] w-[0.95rem]" />
+          </a>
           <Link href="/create" className="btn-primary hidden h-[2.375rem] py-0 sm:inline-flex">
             <Icon name="plus" className="h-4 w-4" />
             Start a narrative

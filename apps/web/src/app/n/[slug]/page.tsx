@@ -151,7 +151,7 @@ function HeroStats({ n }: { n: NarrativeDetail }) {
           {projected.pctOfSupply.toFixed(1)}%
         </Stat>
       )}
-      <Stat icon="clock" label={n.stage === "pooling" ? "Pool closes" : n.stage === "launching" ? "Launch in" : "Refunded"} tone={n.stage === "refunding" ? "text-danger" : "text-warn"}>
+      <Stat icon="clock" label={n.stage === "pooling" ? "Pool closes" : n.stage === "launching" ? "Launch in" : "Refunded"} tone={n.stage === "refunding" ? "text-danger" : "text-gold"}>
         {n.stage === "pooling" ? (
           <Countdown to={e.depositEnd} done="closing…" />
         ) : n.stage === "launching" ? (

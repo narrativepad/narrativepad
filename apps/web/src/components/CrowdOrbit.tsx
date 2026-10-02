@@ -33,7 +33,7 @@ function Chip({ icon, title, sub, className, delay }: { icon: IconName; title: s
       className={`absolute z-20 flex animate-float items-center gap-2.5 rounded-2xl border border-white/10 bg-[#0f1114]/90 px-3 py-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.08),0_16px_40px_-16px_rgb(0_0_0/0.9)] backdrop-blur-xl ${className}`}
       style={{ animationDelay: delay }}
     >
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand/20 text-accent">
         <Icon name={icon} className="h-3.5 w-3.5" />
       </span>
       <span className="leading-tight">
@@ -48,13 +48,13 @@ export function CrowdOrbit() {
   return (
     <div className="@container relative mx-auto aspect-square w-full max-w-[34rem] select-none" aria-hidden>
       {/* light */}
-      <div className="absolute inset-[24%] rounded-full bg-accent/25 blur-[80px]" />
-      <div className="absolute inset-[30%] translate-x-[12%] rounded-full bg-accent-2/20 blur-[60px]" />
+      <div className="absolute inset-[22%] rounded-full bg-brand/35 blur-[80px]" />
+      <div className="absolute inset-[34%] translate-x-[14%] translate-y-[10%] rounded-full bg-gold/15 blur-[60px]" />
 
       {/* rings */}
       <div className="absolute inset-[2%] rounded-full border border-white/[0.06]" />
       <div className="absolute inset-[16%] animate-spin-slower rounded-full border border-dashed border-white/[0.1]" />
-      <div className="absolute inset-[28%] rounded-full border border-white/[0.07] bg-[radial-gradient(circle,rgb(61_242_163/0.06),transparent_70%)]" />
+      <div className="absolute inset-[28%] rounded-full border border-white/[0.07] bg-[radial-gradient(circle,rgb(1_107_253/0.1),transparent_70%)]" />
 
       {/* the crowd */}
       <div className="absolute inset-[2%] animate-spin-slow">
@@ -68,37 +68,27 @@ export function CrowdOrbit() {
         ))}
       </div>
 
-      {/* deposits flowing into the pool */}
+      {/* deposits flowing in: little gold coins, like the ones the mascot shouts out */}
       {FLOW.map((d, i) => (
         <span key={d} className="absolute left-1/2 top-1/2 h-0 w-0" style={{ transform: `rotate(${d}deg)` }}>
           <span
-            className="absolute -left-[3px] -top-[3px] block h-1.5 w-1.5 animate-inflow rounded-full bg-accent shadow-[0_0_10px_2px_rgb(61_242_163/0.6)]"
+            className="absolute -left-[4px] -top-[4px] block h-2 w-2 animate-inflow rounded-full bg-gold shadow-[0_0_12px_2px_rgb(255_208_50/0.55),inset_0_-1px_0_rgb(0_0_0/0.35)]"
             style={{ ["--from" as string]: "33cqw", animationDelay: `${(i * 0.41).toFixed(2)}s` }}
           />
         </span>
       ))}
 
-      {/* the coin */}
-      <div className="absolute inset-[33%] z-10 animate-float">
-        <div
-          className="absolute inset-0 rounded-full"
-          style={{
-            background: "conic-gradient(from 210deg, #0d6a52, #3df2a3, #d9fff0, #3df2a3, #1596c4, #0b4c5e, #0d6a52)",
-            boxShadow: "0 40px 90px -20px rgb(61 242 163 / 0.55), inset 0 0 0 1px rgb(255 255 255 / 0.35), inset 0 -14px 28px rgb(0 0 0 / 0.35)",
-          }}
+      {/* the mascot at the centre of the crowd */}
+      <div className="absolute inset-[31%] z-10 animate-float">
+        <div className="absolute -inset-[6%] rounded-full bg-[conic-gradient(from_200deg,#016bfd,#8ec1ff,#ffd032,#016bfd)] opacity-90 blur-[1px]" />
+        <div className="absolute -inset-[3%] rounded-full bg-bg" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/brand/logo.png"
+          alt=""
+          className="absolute inset-0 h-full w-full rounded-full object-cover shadow-[0_40px_100px_-20px_rgb(1_107_253/0.8)]"
         />
-        <div
-          className="absolute inset-[9%] rounded-full"
-          style={{
-            background: "radial-gradient(circle at 34% 28%, #7cf9c6, #20c58f 48%, #0c7656 100%)",
-            boxShadow: "inset 0 3px 8px rgb(255 255 255 / 0.45), inset 0 -10px 22px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(0 0 0 / 0.15)",
-          }}
-        />
-        <div className="absolute inset-[16%] rounded-full border border-[#02140c]/20" />
-        <svg viewBox="0 0 32 32" className="absolute inset-[30%] drop-shadow-[0_1px_0_rgb(255_255_255/0.45)]">
-          <path d="M11 21.5V10.5l10 11V10.5" fill="none" stroke="#04281a" strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        <div className="absolute inset-[5%] rounded-full bg-[radial-gradient(ellipse_at_30%_18%,rgb(255_255_255/0.6),transparent_42%)] mix-blend-screen" />
+        <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-white/25" />
       </div>
 
       <Chip icon="vote" title="Picked by the crowd" sub="name, ticker and image" className="left-0 top-[10%]" delay="0s" />

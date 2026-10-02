@@ -89,7 +89,7 @@ export function Market({ items, searching }: { items: NarrativeCard[]; searching
               }`}
             >
               {hex && <span className="h-1.5 w-1.5 rounded-full" style={{ background: hex }} />}
-              {t.icon && <Icon name={t.icon} className={`h-3.5 w-3.5 ${on ? "" : t.icon === "star" ? "text-warn" : "text-accent"}`} />}
+              {t.icon && <Icon name={t.icon} className={`h-3.5 w-3.5 ${on ? "" : t.icon === "star" ? "text-gold" : "text-accent"}`} />}
               {t.label}
               <span className={`num text-[0.75rem] ${on ? "text-black/50" : "text-dim"}`}>{counts[t.key]}</span>
             </button>

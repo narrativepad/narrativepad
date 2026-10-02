@@ -168,7 +168,7 @@ export function PortfolioView() {
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="flex items-center gap-2 text-[1.35rem] font-semibold tracking-[-0.025em]">
-            <Icon name="star" className="h-5 w-5 fill-current text-warn" /> Watchlist
+            <Icon name="star" className="h-5 w-5 fill-current text-gold" /> Watchlist
           </h2>
           <span className="text-[0.8rem] text-dim">Saved in this browser</span>
         </div>
@@ -224,13 +224,13 @@ function Position({
     action = <span className="text-sm text-dim">Refunded in full</span>;
   } else if (p.stage === "pooling") {
     action = (
-      <span className="text-sm text-info">
+      <span className="text-sm text-accent">
         <Countdown to={p.depositEnd} prefix="closes in" done="closing…" />
       </span>
     );
   } else if (p.stage === "launching") {
     action = (
-      <span className="text-sm text-warn">
+      <span className="text-sm text-gold">
         <Countdown to={p.launchAfter} prefix="launches in" done="launching…" />
       </span>
     );

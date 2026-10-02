@@ -7,9 +7,9 @@ export const short = (a: string, n = 4) => (a.length > 2 * n + 1 ? `${a.slice(0,
 
 export const STAGE: Record<Stage, { label: string; text: string; bg: string; ring: string; dot: string; hex: string }> = {
   voting: { label: "Voting", text: "text-violet", bg: "bg-violet/10", ring: "ring-violet/40", dot: "bg-violet", hex: "#a98bff" },
-  pooling: { label: "Pooling", text: "text-info", bg: "bg-info/10", ring: "ring-info/40", dot: "bg-info", hex: "#5fb4ff" },
-  launching: { label: "Launching", text: "text-warn", bg: "bg-warn/10", ring: "ring-warn/40", dot: "bg-warn", hex: "#ffbd4a" },
-  live: { label: "Live", text: "text-accent", bg: "bg-accent/10", ring: "ring-accent/40", dot: "bg-accent", hex: "#3df2a3" },
+  pooling: { label: "Pooling", text: "text-accent", bg: "bg-accent/10", ring: "ring-accent/40", dot: "bg-accent", hex: "#3d8bff" },
+  launching: { label: "Launching", text: "text-gold", bg: "bg-gold/10", ring: "ring-gold/40", dot: "bg-gold", hex: "#ffd032" },
+  live: { label: "Live", text: "text-success", bg: "bg-success/10", ring: "ring-success/40", dot: "bg-success", hex: "#3ddc97" },
   refunding: { label: "Refunding", text: "text-danger", bg: "bg-danger/10", ring: "ring-danger/30", dot: "bg-danger", hex: "#ff5c7c" },
   cancelled: { label: "Cancelled", text: "text-dim", bg: "bg-panel-3", ring: "ring-line-2", dot: "bg-dim", hex: "#5c6676" },
 };
@@ -33,21 +33,28 @@ export function TeamBadge() {
   );
 }
 
-/** The mark is a coin: same metal as the hero coin. */
+/** The X (Twitter) mark, filled. */
+export function XIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+      <path d="M17.75 3h3.07l-6.7 7.66L22 21h-6.17l-4.83-6.32L5.47 21H2.4l7.17-8.2L2 3h6.33l4.37 5.77L17.75 3Zm-1.08 16.2h1.7L7.4 4.7H5.58l11.09 14.5Z" />
+    </svg>
+  );
+}
+
+/** The brand mark: the megaphone mascot from @narrativepad's profile picture. */
 export function Logo({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-      <defs>
-        <linearGradient id="np-logo" x1="0.2" y1="0" x2="0.8" y2="1">
-          <stop offset="0" stopColor="#e2fff3" />
-          <stop offset="0.45" stopColor="#3df2a3" />
-          <stop offset="1" stopColor="#1596c4" />
-        </linearGradient>
-      </defs>
-      <circle cx="16" cy="16" r="15.5" fill="url(#np-logo)" />
-      <circle cx="16" cy="16" r="12.3" fill="none" stroke="#02140c" strokeOpacity="0.22" strokeWidth="1" />
-      <path d="M11.6 21V11l8.8 10V11" fill="none" stroke="#02140c" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={size > 64 ? "/brand/logo.png" : "/brand/logo-128.png"}
+      alt=""
+      aria-hidden
+      width={size}
+      height={size}
+      className="shrink-0 rounded-full ring-1 ring-white/15"
+      style={{ width: size, height: size }}
+    />
   );
 }
 
@@ -113,7 +120,7 @@ export function ProgressBar({
   const pct = max > 0n ? Number((value * 10_000n) / max) / 100 : 0;
   const mk = marker && max > 0n ? Number((marker * 10_000n) / max) / 100 : null;
   const fill =
-    tone === "info" ? "from-info/70 to-info" : tone === "warn" ? "from-warn/70 to-warn" : "from-accent to-accent-2";
+    tone === "info" ? "from-info/70 to-info" : tone === "warn" ? "from-gold/60 to-gold" : "from-accent to-accent-2";
   return (
     <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
       <div className={`relative h-full overflow-hidden rounded-full bg-gradient-to-r ${fill} transition-[width] duration-700 ease-out`} style={{ width: `${Math.min(100, pct)}%` }}>

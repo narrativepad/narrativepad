@@ -6,9 +6,9 @@ import { Avatar } from "./bits";
 
 const VERB: Record<GlobalActivityItem["kind"], { verb: string; tone: string }> = {
   vote: { verb: "voted on", tone: "text-violet" },
-  submit: { verb: "suggested for", tone: "text-info" },
+  submit: { verb: "suggested for", tone: "text-accent-2" },
   deposit: { verb: "joined the pool of", tone: "text-accent" },
-  claim: { verb: "claimed from", tone: "text-warn" },
+  claim: { verb: "claimed from", tone: "text-gold" },
   refund: { verb: "refunded from", tone: "text-danger" },
 };
 

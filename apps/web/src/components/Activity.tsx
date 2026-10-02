@@ -18,7 +18,7 @@ const STYLE: Record<ActivityItem["kind"], { tone: string; verb: string }> = {
   vote: { tone: "bg-violet", verb: "voted" },
   submit: { tone: "bg-info", verb: "suggested" },
   deposit: { tone: "bg-accent", verb: "joined with" },
-  claim: { tone: "bg-warn", verb: "claimed" },
+  claim: { tone: "bg-gold", verb: "claimed" },
   refund: { tone: "bg-danger", verb: "refunded" },
 };
 

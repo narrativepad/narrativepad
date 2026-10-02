@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { BRAND } from "@/lib/brand";
 import { config } from "@/lib/config";
-import { Icon, Logo } from "./bits";
+import { Icon, Logo, XIcon } from "./bits";
 
 const LINKS = [
   { href: "/", label: "Explore" },
@@ -24,6 +25,9 @@ export function Footer() {
             The crowd picks the name, ticker and image, then everyone buys in together through one public escrow. Same price for all, and a
             full refund if it doesn&apos;t launch.
           </p>
+          <a href={BRAND.x} target="_blank" rel="noopener noreferrer" className="btn mt-5 h-10 px-4">
+            <XIcon className="h-4 w-4" /> Follow {BRAND.xHandle}
+          </a>
         </div>
         <nav className="grid grid-cols-2 content-start gap-x-6 gap-y-3 text-[0.9rem]">
           {LINKS.map((l) => (
