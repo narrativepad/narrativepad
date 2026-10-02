@@ -327,4 +327,10 @@ Format: date — decision — why — alternatives considered — decided by.
     every feature.
   - `scripts/test-program.sh` now rebuilds both programs with `--arch v0`, fails the build
     unless the ELF header says v0, and runs the tests against that exact file.
+- **Deployed:**
+  - The v0 build from `b47777e` (sha256 `cc1fd504…`) is live on devnet at `42bw…bVrY`,
+    upgrade authority `8JU2…4Wed`.
+  - `init_config` is done: config `4Vct…nWk5`, operator `Atj9…1sH9`, treasury = deploy
+    key, 1% fee, 30/20 creator split, max pool 0.5 SOL.
+  - Verified by reading the program and config accounts back from devnet.
 - **Decided by:** owner ("start devnet", "why can't it happen without my wallets") + Claude.

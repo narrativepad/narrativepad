@@ -46,6 +46,14 @@ node --experimental-strip-types scripts/sim-e2e.ts http://localhost:3917   # ful
 
 ## Devnet escrow program (D-020)
 
+**Live on devnet since 2026-10-02:**
+- Program: [`42bwRMxcnpbfiH1K68dGuVkgEWdZoWY72fZ7VVVcbVrY`](https://explorer.solana.com/address/42bwRMxcnpbfiH1K68dGuVkgEWdZoWY72fZ7VVVcbVrY?cluster=devnet).
+  - SBPF v0 build from commit `b47777e`, sha256 `cc1fd504…5b82f07`.
+  - Deploy tx [`5Ff4…EboK`](https://explorer.solana.com/tx/5Ff4naUD3jiMX1s48dyAycRbU1zMfUMdzoBTsMrRdjci35W15CeBqvGzdBUVS6vyNMHe6nDCfizmU2zmtbFZEboK?cluster=devnet).
+- Config PDA: `4VctDfP7cj6xVa2m34HR1sVyG4tT4wbuHV1UZfRAnWk5`.
+  - Settings: 1% fee, creator fees 30% proposer / 20% platform, max pool 0.5 SOL.
+  - [init tx](https://explorer.solana.com/tx/13mF48Sb8SNdrr9nj5iWzM2DPxKsrh968tT4nRou8FHY2KR9d3ADAthka4yw5NKwyVsK3KSsJJ5Ecf6zrG7mypa?cluster=devnet).
+
 CI builds and tests the program, then publishes the build as the
 [`devnet-build`](https://github.com/narrativepad/narrativepad/releases/tag/devnet-build) pre-release.
 It is deployed from the owner's machine with the Solana CLI (Windows works; no WSL needed), so no
