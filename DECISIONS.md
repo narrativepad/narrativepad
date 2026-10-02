@@ -528,3 +528,16 @@ Format: date — decision — why — alternatives considered — decided by.
     funder); not run yet.
 - **Decided by:** owner (the creator picks the pair, logos in the picker, "make it premium
   like pump.fun", "do whatever you need to make it work") + Claude (design).
+- **Deployed (2026-10-02, by Claude at the owner's request):**
+  - Program: extended by 150,000 bytes, then upgraded to the D-023 build (sha256
+    `8f21d8c9…`) in slot 506766333. Tx `biLWcsYP…3S`. The dumped program is byte-identical to
+    the release build.
+  - Site: Railway deployment `278ce9a4` went live right after; rollback point `9995d84b`.
+  - `devnet-e2e.ts` 8/8 against the upgraded program on SOL pools: escrow, ordered deposits,
+    DepositTooSmall, launch on pump devnet, claim, automatic refund. Launch tx
+    `24nXiczp…ZeM`.
+  - A USDC pool opened on devnet with the right `PoolQuote` (devnet USDC, 6 decimals) and
+    vault token account; the site read pump's devnet curve (4.292 USDC).
+  - Not yet on devnet: USDC deposits, launch, claim and refund. They need devnet USDC from
+    faucet.circle.com on the funder (`8JU2…4Wed`). They are covered by the LiteSVM program
+    tests and the simulation.
