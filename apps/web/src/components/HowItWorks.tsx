@@ -50,13 +50,13 @@ function LockArt() {
         <span className="absolute inset-0 rounded-full bg-accent/20 blur-xl" />
         <Icon name="lock" className="relative h-7 w-7" />
       </span>
-      <ul className="space-y-1.5 text-[0.78rem]">
+      <div className="space-y-1.5 text-[0.78rem]">
         {["Name", "Ticker", "Image", "Links"].map((f) => (
-          <li key={f} className="flex items-center gap-2 text-muted">
+          <div key={f} className="flex items-center gap-2 text-muted">
             <Icon name="check" className="h-3.5 w-3.5 text-accent" /> {f}
-          </li>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }

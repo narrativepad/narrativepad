@@ -63,24 +63,42 @@ jobs:
       - run: npm run build
 
       # Two throwaway servers with short stage timers: one for the API lifecycle, one for the browser.
+      # Runners are slower than a desktop, so voting and pool windows leave room for ~70 signed
+      # requests. The tranche interval stays at 6s because sim-e2e times its claims to it.
       - name: Start test servers
         run: |
-          VOTE_DURATION_SEC=15 DEPOSIT_WINDOW_SEC=15 LAUNCH_DELAY_SEC=4 LAUNCH_WINDOW_SEC=60 TRANCHE_COUNT=3 TRANCHE_INTERVAL_SEC=6 \
+          VOTE_DURATION_SEC=45 DEPOSIT_WINDOW_SEC=30 LAUNCH_DELAY_SEC=4 LAUNCH_WINDOW_SEC=90 TRANCHE_COUNT=3 TRANCHE_INTERVAL_SEC=6 \
             PGLITE_DIR=./.data/e2e PUBLIC_URL=http://localhost:3911 nohup npx next start -p 3911 > api-server.log 2>&1 &
-          VOTE_DURATION_SEC=40 DEPOSIT_WINDOW_SEC=35 LAUNCH_DELAY_SEC=3 LAUNCH_WINDOW_SEC=60 TRANCHE_COUNT=3 TRANCHE_INTERVAL_SEC=8 \
+          VOTE_DURATION_SEC=60 DEPOSIT_WINDOW_SEC=45 LAUNCH_DELAY_SEC=3 LAUNCH_WINDOW_SEC=90 TRANCHE_COUNT=3 TRANCHE_INTERVAL_SEC=8 \
             PGLITE_DIR=./.data/ui PUBLIC_URL=http://localhost:3912 nohup npx next start -p 3912 > ui-server.log 2>&1 &
           for port in 3911 3912; do
-            for i in $(seq 1 60); do curl -sf "http://localhost:$port/api/health" >/dev/null && break; sleep 1; done
+            for i in $(seq 1 90); do curl -sf "http://localhost:$port/api/health" >/dev/null && break; sleep 1; done
           done
 
       - name: API lifecycle
-        run: node --experimental-strip-types scripts/sim-e2e.ts http://localhost:3911
+        run: |
+          set -o pipefail
+          node --experimental-strip-types scripts/sim-e2e.ts http://localhost:3911 2>&1 | tee api-e2e.log
 
       - name: Browser click-through
-        run: node scripts/ui-e2e.mjs http://localhost:3912 ./ui-shots
+        run: |
+          set -o pipefail
+          node scripts/ui-e2e.mjs http://localhost:3912 ./ui-shots 2>&1 | tee ui-e2e.log
 
       - name: Smoke
-        run: node scripts/smoke.mjs http://localhost:3912
+        run: |
+          set -o pipefail
+          node scripts/smoke.mjs http://localhost:3912 2>&1 | tee smoke.log
+
+      # Logs need a GitHub login; annotations are public. Post the end of each suite's output.
+      - name: Report failures as annotations
+        if: failure()
+        run: |
+          enc() { sed 's/%/%25/g; s/\r//g' | awk 'BEGIN{ORS="%0A"} {print}'; }
+          for f in api-e2e.log ui-e2e.log smoke.log api-server.log; do
+            [ -s "$f" ] && echo "::error title=${f}::$(tail -n 60 "$f" | enc)"
+          done
+          true
 
       - name: Upload screenshots and server logs
         if: always()
