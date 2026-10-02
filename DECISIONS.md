@@ -320,4 +320,11 @@ Format: date — decision — why — alternatives considered — decided by.
 - **Alternatives:** deploying from CI with a secret; building locally (needs WSL2 for Anchor).
 - **Mainnet is unchanged:** different authority (multisig plus timelock), and only after an
   external audit.
+- **SBPF v0:** the first deploy was refused before anything was sent ("sbpf_version … not
+  enabled").
+  - Agave 4.x builds SBPF v3 by default, but v3 deployment (SIMD-0161, feature `C8XZNs1b…`) is
+    inactive on devnet and mainnet. The LiteSVM tests passed only because LiteSVM enables
+    every feature.
+  - `scripts/test-program.sh` now rebuilds both programs with `--arch v0`, fails the build
+    unless the ELF header says v0, and runs the tests against that exact file.
 - **Decided by:** owner ("start devnet", "why can't it happen without my wallets") + Claude.
