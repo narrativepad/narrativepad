@@ -52,8 +52,8 @@ export function Footer() {
 
       <div
         aria-hidden
-        className="pointer-events-none select-none px-4 text-center text-[19vw] font-semibold leading-[0.8] tracking-[-0.06em] text-transparent lg:text-[15vw]"
-        style={{ backgroundImage: "linear-gradient(180deg, rgb(255 255 255 / 0.07), rgb(255 255 255 / 0))", WebkitBackgroundClip: "text", backgroundClip: "text" }}
+        className="pointer-events-none select-none overflow-hidden px-4 pb-[0.14em] pt-6 text-center text-[17vw] font-semibold leading-none tracking-[-0.06em] text-transparent lg:text-[14vw]"
+        style={{ backgroundImage: "linear-gradient(180deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0.015) 85%)", WebkitBackgroundClip: "text", backgroundClip: "text" }}
       >
         narrativepad
       </div>

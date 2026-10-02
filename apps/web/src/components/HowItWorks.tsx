@@ -45,12 +45,18 @@ function VoteArt() {
 
 function LockArt() {
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex items-center gap-5">
       <span className="relative flex h-16 w-16 items-center justify-center rounded-full bg-accent/10 text-accent ring-1 ring-accent/30">
         <span className="absolute inset-0 rounded-full bg-accent/20 blur-xl" />
         <Icon name="lock" className="relative h-7 w-7" />
       </span>
-      <span className="mono mt-4 rounded-lg bg-white/[0.04] px-2.5 py-1 text-[0.72rem] text-dim">sha256 · 9f2c…e41a</span>
+      <ul className="space-y-1.5 text-[0.78rem]">
+        {["Name", "Ticker", "Image", "Links"].map((f) => (
+          <li key={f} className="flex items-center gap-2 text-muted">
+            <Icon name="check" className="h-3.5 w-3.5 text-accent" /> {f}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -111,7 +117,7 @@ function ReleaseArt({ count }: { count: number }) {
   );
 }
 
-export function HowItWorks() {
+export function HowItWorks({ heading = true }: { heading?: boolean }) {
   const steps: { t: string; d: string; when: string; art: React.ReactNode; hex: string }[] = [
     { t: "Propose", d: "Anyone posts a pitch and its source: a tweet, a clip, a meme.", when: "anyone, any time", art: <ProposeArt />, hex: "#a3a8b0" },
     { t: "Vote", d: "The crowd suggests and votes on the name, ticker, image and links. One vote per person per field.", when: `${min(config.voteDurationSec)} min`, art: <VoteArt />, hex: "#a98bff" },
@@ -135,19 +141,21 @@ export function HowItWorks() {
   const total = min(config.voteDurationSec + config.depositWindowSec + config.launchDelaySec);
 
   return (
-    <section id="how" className="scroll-mt-24 py-8 lg:py-14">
-      <div className="mx-auto max-w-3xl text-center">
-        <p className="eyebrow">How it works</p>
-        <h2 className="mt-4 text-[2.1rem] font-semibold leading-[1.04] tracking-[-0.04em] sm:text-[2.9rem]">
-          <span className="text-silver">From a meme to a coin, </span>
-          <span className="display text-gradient pr-2 text-[1.06em]">together.</span>
-        </h2>
-        <p className="mx-auto mt-4 max-w-xl text-[1.02rem] leading-relaxed text-muted">
-          Six steps and about {total} minutes from the first vote to launch. Every step happens in public.
-        </p>
-      </div>
+    <section id="how" className={`scroll-mt-24 ${heading ? "py-8 lg:py-14" : ""}`}>
+      {heading && (
+        <div className="mx-auto mb-12 max-w-3xl text-center">
+          <p className="eyebrow">How it works</p>
+          <h2 className="mt-4 text-[2.1rem] font-semibold leading-[1.04] tracking-[-0.04em] sm:text-[2.9rem]">
+            <span className="text-silver">From a meme to a coin, </span>
+            <span className="display text-gradient pr-2 text-[1.06em]">together.</span>
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-[1.02rem] leading-relaxed text-muted">
+            Six steps and about {total} minutes from the first vote to launch. Every step happens in public.
+          </p>
+        </div>
+      )}
 
-      <ol className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {steps.map((s, i) => (
           <li key={s.t} className="panel group relative flex flex-col overflow-hidden">
             <div className="relative flex h-44 items-center justify-center border-b border-white/[0.05] bg-[radial-gradient(60%_80%_at_50%_100%,rgb(255_255_255/0.035),transparent)]">

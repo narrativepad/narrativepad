@@ -4,13 +4,17 @@ import { CrowdOrbit } from "./CrowdOrbit";
 
 /** What narrativepad is, in one screen. */
 export function Hero({ stats }: { stats: { narratives: number; voters: number; launched: number } }) {
-  const live: [number, string][] = (
-    [
-      [stats.narratives, stats.narratives === 1 ? "narrative" : "narratives"],
-      [stats.voters, stats.voters === 1 ? "voter" : "voters"],
-      [stats.launched, "launched"],
-    ] as [number, string][]
-  ).filter(([v]) => v > 0);
+  // A lone "1 narrative" reads as empty, so the numbers only appear once there's some traction.
+  const live: [number, string][] =
+    stats.narratives >= 3
+      ? (
+          [
+            [stats.narratives, "narratives"],
+            [stats.voters, stats.voters === 1 ? "voter" : "voters"],
+            [stats.launched, "launched"],
+          ] as [number, string][]
+        ).filter(([v]) => v > 0)
+      : [];
 
   return (
     <section className="relative grid items-center gap-8 pb-4 pt-6 sm:pt-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-4 lg:pb-10 lg:pt-14 2xl:pt-16">

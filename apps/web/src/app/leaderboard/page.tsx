@@ -58,7 +58,9 @@ export default async function LeaderboardPage() {
                       </span>
                     </span>
                     <StageBadge stage={n.stage} />
-                    <span className="num w-20 text-right text-sm font-semibold text-accent">{formatSol(BigInt(n.escrow!.totalDeposited), 2)}</span>
+                    <span className="num w-24 text-right text-sm font-semibold text-accent">
+                      {formatSol(BigInt(n.escrow!.totalDeposited), 2)} <span className="text-xs font-normal text-dim">SOL</span>
+                    </span>
                   </Link>
                 </li>
               ))}
@@ -89,7 +91,9 @@ export default async function LeaderboardPage() {
                   <span className="relative text-xs text-dim">
                     {c.launches} launched · {c.narratives} started
                   </span>
-                  <span className="num relative w-20 text-right text-sm font-semibold">{formatSol(BigInt(c.raised), 2)}</span>
+                  <span className="num relative w-24 text-right text-sm font-semibold">
+                    {formatSol(BigInt(c.raised), 2)} <span className="text-xs font-normal text-dim">SOL</span>
+                  </span>
                 </li>
               ))}
             </ol>
@@ -117,7 +121,9 @@ export default async function LeaderboardPage() {
                   <Medal i={i} />
                   <Who address={v.wallet} size={22} className="relative flex-1 text-sm" />
                   <span className="relative text-xs text-dim">{v.votes} votes</span>
-                  <span className="num relative w-14 text-right text-sm font-semibold text-violet">{v.picks}</span>
+                  <span className="num relative w-20 text-right text-sm font-semibold text-violet">
+                    {v.picks} <span className="text-xs font-normal text-dim">won</span>
+                  </span>
                 </li>
               ))}
             </ol>

@@ -104,7 +104,7 @@ export function CoinCard({ n, href, hot = false, showTrend = false }: { n: Narra
               <div className="flex items-center justify-between text-[0.75rem] text-dim">
                 <span>{e.depositorCount === 0 ? "Nobody in yet" : `${e.depositorCount} in the pool`}</span>
                 <span>
-                  {total > 0n ? `buys ≈ ${launchBreakdown(total, e.feeBps).pctOfSupply.toFixed(1)}% of supply` : `min ${formatSol(BigInt(e.poolMin))} SOL to launch`}
+                  {total > 0n ? `≈ ${launchBreakdown(total, e.feeBps).pctOfSupply.toFixed(1)}% of supply at launch` : `${formatSol(BigInt(e.poolMin))} SOL needed to launch`}
                 </span>
               </div>
             </div>
@@ -124,7 +124,7 @@ export function CoinCard({ n, href, hot = false, showTrend = false }: { n: Narra
 
           {(n.stage === "refunding" || n.stage === "cancelled") && (
             <p className="text-[0.8rem] text-dim">
-              {n.stage === "refunding" ? "Didn't reach launch. Everyone in the pool can take 100% back." : "Voting ended without a name and ticker."}
+              {n.stage === "refunding" ? "Didn't launch. Refunds are open, 100% back to everyone." : "Voting ended without a winning name and ticker."}
             </p>
           )}
         </div>

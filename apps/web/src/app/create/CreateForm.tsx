@@ -69,7 +69,7 @@ export function CreateForm() {
   }
 
   return (
-    <div className="grid min-h-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]">
+    <div className="grid min-h-0 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:items-start">
       <form onSubmit={submit} className="panel flex min-h-0 flex-col">
         <div className="panel-head">
           <span className="flex items-center gap-2">

@@ -43,7 +43,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ q
                   Clear search
                 </Link>
               ) : (
-                "Every coin on narrativepad, from first vote to launch. Live."
+                "Vote on coins being named right now, join open pools, and follow every launch as it happens."
               )}
             </p>
           </div>

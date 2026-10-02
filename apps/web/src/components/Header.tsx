@@ -109,7 +109,10 @@ export function Header() {
           </div>
         </div>
       </div>
-      <nav className="flex gap-1 overflow-x-auto border-t border-white/[0.05] px-3 py-2 text-[0.84rem] sm:px-4 lg:hidden">
+      <nav
+        className="flex gap-1 overflow-x-auto border-t border-white/[0.05] px-3 py-2 text-[0.84rem] [scrollbar-width:none] sm:px-4 lg:hidden"
+        style={{ maskImage: "linear-gradient(90deg, black 85%, transparent)" }}
+      >
         {NAV.map((n) => (
           <Link
             key={n.href}

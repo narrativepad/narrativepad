@@ -16,12 +16,8 @@
 
 <p>
   <a href="https://github.com/narrativepad/narrativepad/actions/workflows/web.yml"><img alt="Web app" src="https://github.com/narrativepad/narrativepad/actions/workflows/web.yml/badge.svg"></a>
-  <a href="https://github.com/narrativepad/narrativepad/actions/workflows/program.yml"><img alt="Escrow program" src="https://github.com/narrativepad/narrativepad/actions/workflows/program.yml/badge.svg"></a>
   <img alt="Status: preview" src="https://img.shields.io/badge/status-preview-FFD032?style=flat">
   <img alt="Solana devnet" src="https://img.shields.io/badge/Solana-devnet-016BFD?style=flat&logo=solana&logoColor=white">
-  <img alt="Anchor 1.2" src="https://img.shields.io/badge/Anchor-1.2-016BFD?style=flat">
-  <img alt="Next.js 16" src="https://img.shields.io/badge/Next.js-16-000000?style=flat&logo=nextdotjs&logoColor=white">
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat&logo=typescript&logoColor=white">
   <a href="https://x.com/narrativepad"><img alt="Follow on X" src="https://img.shields.io/badge/follow-%40narrativepad-000000?style=flat&logo=x&logoColor=white"></a>
 </p>
 
@@ -38,15 +34,7 @@ narrativepad flips that. **The crowd decides everything before the coin exists**
 
 ## How it works
 
-```mermaid
-flowchart LR
-    P["💡 Propose<br/><sub>pitch + source</sub>"] --> V["🗳️ Vote<br/><sub>name · ticker · image · links</sub>"]
-    V --> L["🔒 Lock<br/><sub>winners frozen + hashed</sub>"]
-    L --> O["🪙 Pool<br/><sub>one public escrow</sub>"]
-    O --> X["🚀 Launch<br/><sub>create + buy, one tx</sub>"]
-    X --> R["🎁 Release<br/><sub>equal unlocks</sub>"]
-    O -. "minimum not met · launch fails" .-> F["↩️ Refund<br/><sub>100%, permissionless</sub>"]
-```
+<img src=".github/assets/how-it-works.png" alt="Propose, vote, lock, pool, launch, release. If it does not launch, everyone takes back 100%." width="100%">
 
 | Stage | What happens | Default |
 |---|---|---|
@@ -57,37 +45,27 @@ flowchart LR
 | **Launch** | The escrow creates the coin and makes the opening buy with the whole pool, in the same transaction. | ~2 min later |
 | **Release** | Tokens go back to every depositor pro-rata, unlocking in equal steps for everyone at once. | 5 × 5 min |
 
-## Guarantees, and their limits
+## What's guaranteed, and what isn't
 
 | | How | Limit |
 |---|---|---|
 | **Non-custodial** | Funds only ever sit in the escrow program. No admin withdraw, no code path that moves user funds except refund, launch and claim. | Upgrade authority must be time-locked or renounced before mainnet. |
-| **Same price for everyone** | Coin creation and the pool's buy happen in one instruction, so nothing can be inserted in between. | Buyers after the pool pay more; that's the point. |
-| **Locked and verifiable** | The lock hash is recomputed in your browser from the served metadata, the winners and a Merkle root of every signed vote. | Lookalike coins can still be launched elsewhere; the official one is the one with this hash. |
+| **Same price for everyone** | Coin creation and the pool's buy happen in one instruction, so nothing can be inserted in between. | Anyone buying after the pool pays a higher price. |
+| **Locked and verifiable** | The lock hash is recomputed in your browser from the served metadata, the winners and a Merkle root of every signed vote. | Copies can be launched elsewhere. The official coin is the one whose page shows this hash. |
 | **Refunds can't be blocked** | Time-based pulls. If the pool misses its minimum or the launch deadline passes, every depositor withdraws 100% themselves. | Platform fee (1%, hard cap 2%) applies only on a successful launch. |
 
 ## Features
 
 - **Crowd-built coins:** ballots for every field, wallet-signed votes, a live tally with percentages, and an image lightbox.
 - **One public pool:** caps and order enforced, a live pool chart, the full depositor list, and a bonding-curve view of where the pool buys.
-- **Live everything:** server-sent events, instant chat per coin with an "N here now" count, live alerts, a Trending tab, and animated numbers.
+- **Live updates:** server-sent events, instant chat per coin with an "N here now" count, live alerts, a Trending tab, and animated numbers.
 - **For holders:** a portfolio with claim-all and refund-all, a watchlist, share-to-X, and launch reminders.
-- **Fast to use:** a guest identity that votes without a wallet, a `Ctrl K` command palette, and mobile-first layouts.
+- **Easy to start:** a guest identity that votes without a wallet, a `Ctrl K` command palette, and mobile-first layouts.
 - **Transparent by default:** downloadable signed votes, in-browser hash verification, a public decision log, and moderation with reports.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    U["Browser<br/><sub>wallet or guest key</sub>"] -->|signed actions| W
-    subgraph Railway
-      W["apps/web · Next.js 16<br/><sub>UI · API · SSE · scheduler</sub>"] --> DB[("Postgres<br/><sub>cache, not the source of truth</sub>")]
-    end
-    W --> A{{"ChainAdapter"}}
-    A -->|today| M["mock<br/><sub>same math as the escrow</sub>"]
-    A -->|next| S["Solana: narrative_escrow<br/><sub>Anchor program</sub>"]
-    S -->|"CPI: create_v2 + buy"| PF["pump.fun"]
-```
+<img src=".github/assets/architecture.png" alt="Browser to the Next.js app and Postgres on Railway, through the chain adapter to the simulated chain today and the Solana escrow program and pump.fun next." width="100%">
 
 - **The chain is the source of truth for money.** The database is a cache, and if they disagree, the chain wins.
 - **One chain adapter boundary** (`apps/web/src/lib/chain`) keeps everything above it chain-agnostic. `CHAIN=mock` today; `CHAIN=solana` once the escrow is on devnet.
@@ -137,9 +115,9 @@ All of these run in [GitHub Actions](.github/workflows) on every push.
 
 ## Roadmap
 
-- [x] Research, architecture and threat model ([D-003](DECISIONS.md))
-- [x] Web app, API, live updates and scheduler on a simulated chain ([D-009](DECISIONS.md), [D-010](DECISIONS.md))
-- [x] Live chat, trending, portfolio, command palette, brand ([D-015](DECISIONS.md) to [D-017](DECISIONS.md))
+- [x] Research, architecture and threat model
+- [x] Web app, API, live updates and scheduler on a simulated chain
+- [x] Live chat, trending, portfolio, command palette, brand
 - [ ] Escrow program green in CI, then deployed to **devnet**
 - [ ] Solana chain adapter and indexer; wallet-signed deposits, claims and refunds
 - [ ] End-to-end devnet dry run with transaction links
@@ -164,5 +142,5 @@ Memecoins are extremely risky and can go to zero. Nothing in this repository or 
 <br>
 <a href="https://x.com/narrativepad"><img src="apps/web/public/brand/logo-128.png" width="48" alt="narrativepad"></a>
 <br>
-<sub>Built in public. Follow along on <a href="https://x.com/narrativepad">X</a>.</sub>
+<sub>Follow the build on <a href="https://x.com/narrativepad">X</a>.</sub>
 </div>

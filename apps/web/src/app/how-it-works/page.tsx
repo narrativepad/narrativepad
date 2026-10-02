@@ -1,109 +1,158 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Icon } from "@/components/bits";
+import { HowItWorks } from "@/components/HowItWorks";
 import { config } from "@/lib/config";
 import { formatSol } from "@/lib/math";
 
 export const metadata: Metadata = { title: "How it works" };
 
-export default function HowItWorks() {
+type IconName = Parameters<typeof Icon>[0]["name"];
+
+export default function HowItWorksPage() {
   const min = (s: number) => Math.round(s / 60);
-  const steps: [Parameters<typeof Icon>[0]["name"], string, string][] = [
-    ["spark", "Propose", "Anyone starts a narrative with a pitch, a picture and a source: a tweet, an article, a meme."],
-    ["vote", "Vote", `For ${min(config.voteDurationSec)} minutes everyone suggests and votes on the name, ticker, image and links. One vote per person per field.`],
-    ["lock", "Lock", "The winners are frozen and hashed. Nobody, including us, can change what launches."],
-    ["coins", "Pool", `A public pool is open for ${min(config.depositWindowSec)} minutes. Everyone who joins gets the same price; every deposit is listed in order.`],
-    ["rocket", "Launch", `${min(config.launchDelaySec)} minutes after the pool closes, the coin is created and the whole pool buys in, in one transaction.`],
-    ["check", "Release", `Tokens go back to everyone who joined, pro-rata, in ${config.trancheCount} equal tranches every ${min(config.trancheIntervalSec)} minutes.`],
+  const limits: { icon: IconName; tone: string; t: string; d: string }[] = [
+    {
+      icon: "check",
+      tone: "text-success",
+      t: "Nobody gets in before the pool",
+      d: "The coin is created and the pool's buy happens in the same transaction. Anyone buying after that, even in the same block, pays a higher price.",
+    },
+    {
+      icon: "check",
+      tone: "text-success",
+      t: "Refunds can't be blocked",
+      d: "If the pool misses its minimum or the launch deadline passes, every depositor takes back 100% on their own. No one has to approve it.",
+    },
+    {
+      icon: "flag",
+      tone: "text-gold",
+      t: "Lookalike coins can still exist",
+      d: "Anyone can launch a copy somewhere else. The official coin is the one built here, and its page shows the locked hash that proves it.",
+    },
+    {
+      icon: "flag",
+      tone: "text-gold",
+      t: "Limits are per wallet",
+      d: "Someone with several wallets can join more than once, but they still pay exactly the same price as everyone else.",
+    },
   ];
-  const promises: [string, string, string][] = [
-    ["Nobody gets in before the pool", "Creation and the opening buy happen together. Later buyers, even in the same block, pay more.", "text-accent"],
-    ["Refunds can't be blocked", "If the pool misses its minimum or the deadline passes, everyone takes back 100%.", "text-accent"],
-    ["Copies can still exist", "Anyone can launch a lookalike elsewhere. The official coin is the one built here, with its locked hash on the page.", "text-warn"],
-    ["Limits are per person", "Someone with several identities can join more than once, but they still pay the same price as everyone.", "text-warn"],
-  ];
-  const limits: [string, string][] = [
+  const rules: [string, string][] = [
     ["Pool cap", `${formatSol(config.poolCap)} SOL`],
-    ["Pool minimum", `${formatSol(config.poolMin)} SOL`],
-    ["Max per person", `${formatSol(config.perWalletMax)} SOL`],
-    ["Min deposit", `${formatSol(config.minDeposit)} SOL`],
-    ["Platform fee", `${(config.feeBps / 100).toFixed(0)}%, only on launch`],
+    ["Pool minimum to launch", `${formatSol(config.poolMin)} SOL`],
+    ["Max per wallet", `${formatSol(config.perWalletMax)} SOL`],
+    ["Smallest deposit", `${formatSol(config.minDeposit)} SOL`],
+    ["Voting window", `${min(config.voteDurationSec)} min`],
+    ["Pool window", `${min(config.depositWindowSec)} min`],
+    ["Platform fee", `${(config.feeBps / 100).toFixed(0)}%, only if it launches`],
     ["Refunds", "100%, always"],
   ];
+  const faq: [string, string][] = [
+    ["Do I need a wallet to vote?", "No. You get a guest identity in your browser that signs your votes for free. Connect a wallet when you want to use your own address."],
+    ["Who holds the money in a pool?", "The escrow program on Solana, not a person or a company wallet. There is no admin withdraw: funds can only leave as a refund to the depositor, the launch buy, or a claim."],
+    ["How is this different from buying on launch day?", "On a normal launch, bots and insiders buy in the first block and everyone else pays more. Here, everyone in the pool buys together in the transaction that creates the coin."],
+    ["When do I get my tokens?", `Right after launch, in ${config.trancheCount} equal unlocks every ${min(config.trancheIntervalSec)} minutes. Everyone unlocks on the same schedule, so nobody can dump on the rest of the pool.`],
+    ["What if the pool doesn't fill?", "If it misses the minimum or the launch fails, everyone takes back 100% of what they put in. The fee is only charged on a successful launch."],
+  ];
+
   return (
-    <div className="flex flex-col gap-3">
-      <section className="panel relative overflow-hidden p-6 lg:p-10">
-        <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-accent/12 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 left-1/3 h-80 w-80 rounded-full bg-accent-2/10 blur-3xl" />
-        <h1 className="relative max-w-4xl text-[2.2rem] font-semibold leading-[1.08] tracking-[-0.03em] lg:text-[3.2rem]">
-          The crowd builds the coin. <span className="display text-gradient pr-2 text-[1.08em]">Then buys it together.</span>
+    <div className="flex flex-col gap-16 pb-6">
+      <section className="relative pt-6 sm:pt-10">
+        <p className="eyebrow">How it works</p>
+        <h1 className="mt-4 max-w-4xl text-[2.6rem] font-semibold leading-[1] tracking-[-0.045em] sm:text-[3.6rem] xl:text-[4.2rem]">
+          <span className="text-silver">The crowd builds the coin.</span>
+          <br />
+          <span className="display text-gradient pr-3 text-[1.06em]">Then buys it together.</span>
         </h1>
-        <p className="relative mt-4 max-w-3xl text-[1.02rem] leading-relaxed text-muted">
-          The community decides everything before the coin exists, then buys it together at launch in one public pool. No snipers ahead of
-          you, no insiders at a better price.
+        <p className="mt-6 max-w-2xl text-[1.06rem] leading-relaxed text-muted">
+          The community decides everything before the coin exists, then buys it at launch through one public pool. No snipers ahead of you,
+          and no insiders at a better price.
         </p>
-        <Link href="/create" className="btn-primary relative mt-6 px-5 py-2.5">
-          <Icon name="plus" className="h-4 w-4" /> Start a narrative
-        </Link>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link href="/create" className="btn-primary h-12 px-6 text-[0.95rem]">
+            Start a narrative <Icon name="arrow" className="h-4 w-4" />
+          </Link>
+          <Link href="/#explore" className="btn h-12 px-6 text-[0.95rem]">
+            Explore coins
+          </Link>
+        </div>
       </section>
 
-      <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-        {steps.map(([icon, t, d], i) => (
-          <li key={t} className="panel relative overflow-hidden p-5">
-            <div className="flex items-center justify-between">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/10 text-accent">
-                <Icon name={icon} className="h-5 w-5" />
-              </span>
-              <span className="num text-xs text-dim">{String(i + 1).padStart(2, "0")}</span>
-            </div>
-            <h2 className="mt-4 text-lg font-semibold tracking-tight">{t}</h2>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted">{d}</p>
-          </li>
-        ))}
-      </ol>
+      <HowItWorks heading={false} />
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <section className="panel overflow-hidden">
-          <div className="panel-head"><span>What we can and can&apos;t promise</span></div>
-          <div className="grid gap-px bg-line sm:grid-cols-2">
-            {promises.map(([t, d, tone]) => (
-              <div key={t} className="bg-panel p-5">
-                <h3 className={`font-semibold ${tone}`}>{t}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-muted">{d}</p>
-              </div>
-            ))}
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="panel overflow-hidden">
+          <div className="panel-head">
+            <span>What&apos;s guaranteed, and what isn&apos;t</span>
           </div>
-        </section>
-        <section className="panel">
-          <div className="panel-head"><span>Pool rules</span></div>
-          <dl className="divide-y divide-line">
-            {limits.map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between px-5 py-3 text-sm">
+          <ul className="grid gap-px bg-white/[0.06] sm:grid-cols-2">
+            {limits.map((l) => (
+              <li key={l.t} className="flex gap-3.5 bg-[#0c0d10] p-5">
+                <Icon name={l.icon} className={`mt-0.5 h-[1.1rem] w-[1.1rem] shrink-0 ${l.tone}`} />
+                <div>
+                  <h3 className="font-semibold">{l.t}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-muted">{l.d}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="panel">
+          <div className="panel-head">
+            <span>Pool rules</span>
+          </div>
+          <dl className="divide-y divide-white/[0.05]">
+            {rules.map(([k, v]) => (
+              <div key={k} className="flex items-center justify-between gap-4 px-5 py-3 text-sm">
                 <dt className="text-muted">{k}</dt>
-                <dd className="num font-medium">{v}</dd>
+                <dd className="num text-right font-medium">{v}</dd>
               </div>
             ))}
           </dl>
-        </section>
-      </div>
+        </div>
+      </section>
+
+      <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+        <div>
+          <p className="eyebrow">Questions</p>
+          <h2 className="mt-3 text-[2rem] font-semibold leading-tight tracking-[-0.035em]">
+            <span className="text-silver">Good to </span>
+            <span className="display text-gradient pr-2 text-[1.06em]">know</span>
+          </h2>
+          <p className="mt-3 max-w-sm text-[0.95rem] leading-relaxed text-muted">
+            Still unsure? Ask on <a href="https://x.com/narrativepad" className="text-ink underline decoration-white/30 underline-offset-4 hover:decoration-white">X</a>.
+          </p>
+        </div>
+        <div className="panel divide-y divide-white/[0.06]">
+          {faq.map(([q, a]) => (
+            <details key={q} className="group px-5 py-4 [&_summary::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium">
+                {q}
+                <Icon name="plus" className="h-4 w-4 shrink-0 text-dim transition-transform group-open:rotate-45" />
+              </summary>
+              <p className="mt-2.5 max-w-2xl text-[0.92rem] leading-relaxed text-muted">{a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
 
       {config.chain === "mock" && (
-        <section id="preview" className="panel scroll-mt-24 border-warn/20">
+        <section id="preview" className="panel scroll-mt-24">
           <div className="panel-head">
             <span>About this preview</span>
-            <span className="chip border-warn/30 text-warn">no real funds</span>
+            <span className="chip border-warn/30 text-warn">no real funds yet</span>
           </div>
           <div className="grid gap-5 p-5 text-sm leading-relaxed text-muted lg:grid-cols-3 lg:p-6">
             <p>
-              <span className="font-semibold text-ink">Pools are simulated.</span> The escrow program is written but not deployed yet, so deposits,
-              launches, claims and refunds run on the same math the escrow uses, and no real SOL moves.
+              <span className="font-semibold text-ink">Pools are simulated.</span> The escrow program is written and being tested, but it isn&apos;t
+              deployed yet. Deposits, launches, claims and refunds run on the same math the escrow uses, and no real SOL moves.
             </p>
             <p>
               <span className="font-semibold text-ink">Votes are real.</span> Every vote is a message signed by your wallet, or by a guest key kept in
-              your browser if you haven&apos;t connected one. Signing is free and never moves funds.
+              your browser. Signing is free and never moves funds.
             </p>
             <p>
-              <span className="font-semibold text-ink">What changes at launch.</span> Once the escrow is live on Solana devnet, every pool page shows its
+              <span className="font-semibold text-ink">What changes next.</span> Once the escrow is live on Solana devnet, every pool page shows its
               escrow address, every deposit, and explorer links you can check yourself.
             </p>
           </div>
