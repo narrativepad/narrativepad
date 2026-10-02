@@ -214,6 +214,7 @@ export function CreateForm() {
                 title,
                 ticker: cleanTicker || null,
                 image,
+                pair: null,
                 createdAt: previewEnds,
                 voteEndsAt: previewEnds,
                 creator: "",

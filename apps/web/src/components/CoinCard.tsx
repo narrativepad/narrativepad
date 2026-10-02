@@ -56,6 +56,11 @@ export function CoinCard({ n, href, hot = false, showTrend = false }: { n: Narra
         <div className="mt-3 flex min-w-0 items-baseline gap-2">
           <h3 className="truncate text-[1.06rem] font-semibold tracking-tight">{n.title}</h3>
           {n.ticker && <span className="num shrink-0 text-[0.78rem] font-medium text-dim">${n.ticker}</span>}
+          {n.pair && n.pair !== "SOL" && (
+            <span className="num ml-auto shrink-0 self-center rounded-full border border-gold/30 bg-gold/[0.08] px-2 py-0.5 text-[0.66rem] font-semibold text-gold" title={`Paired with ${n.pair}`}>
+              /{n.pair}
+            </span>
+          )}
         </div>
         <p className="mt-1 line-clamp-2 min-h-[2.6em] text-[0.84rem] leading-snug text-muted">{n.pitch}</p>
 

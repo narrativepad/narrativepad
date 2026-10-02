@@ -68,6 +68,8 @@ export interface NarrativeCard {
   title: string;
   ticker: string | null;
   image: string | null;
+  /** Locked pair, or the one leading the vote. Null on narratives from before D-018. */
+  pair: string | null;
   createdAt: string;
   voteEndsAt: string;
   creator: string;
@@ -183,7 +185,7 @@ function flowSpark(amounts: bigint[], points = 24): number[] | null {
 
 export async function feed(limit = 120): Promise<NarrativeCard[]> {
   const rows = await q<any>(
-    `SELECT n.*, l.name AS l_name, l.symbol AS l_symbol, l.image AS l_image,
+    `SELECT n.*, l.name AS l_name, l.symbol AS l_symbol, l.image AS l_image, l.launch->>'pair' AS l_pair,
             (SELECT COUNT(*)::int FROM votes v WHERE v.narrative_id = n.id) AS vote_count,
             (SELECT COUNT(*)::int FROM comments c WHERE c.narrative_id = n.id AND NOT c.hidden) AS comment_count,
             (SELECT COUNT(*)::int FROM votes v WHERE v.narrative_id = n.id AND v.created_at > now() - make_interval(mins => ${TREND_MINUTES})) AS t_votes,
@@ -205,7 +207,7 @@ export async function feed(limit = 120): Promise<NarrativeCard[]> {
         q<any>(
           `SELECT DISTINCT ON (s.narrative_id, s.field) s.narrative_id, s.field, s.value
              FROM submissions s LEFT JOIN votes v ON v.submission_id = s.id
-            WHERE s.narrative_id = ANY($1) AND NOT s.hidden AND s.field IN ('name','ticker','image')
+            WHERE s.narrative_id = ANY($1) AND NOT s.hidden AND s.field IN ('name','ticker','image','pair')
             GROUP BY s.id
             ORDER BY s.narrative_id, s.field, COUNT(v.voter_wallet) DESC, s.created_at ASC, s.id ASC`,
           [ids],
@@ -238,6 +240,7 @@ export async function feed(limit = 120): Promise<NarrativeCard[]> {
       title: r.l_name ?? l.name ?? "Untitled narrative",
       ticker: r.l_symbol ?? l.ticker ?? null,
       image: r.l_image ?? l.image ?? null,
+      pair: r.l_pair ?? l.pair ?? null,
       createdAt: date(r.created_at).toISOString(),
       voteEndsAt: date(r.vote_ends_at).toISOString(),
       creator: r.creator_wallet,

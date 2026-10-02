@@ -53,6 +53,8 @@ export default function HowItWorksPage() {
     ["How is this different from buying on launch day?", "On a normal launch, bots and insiders buy in the first block and everyone else pays more. Here, everyone in the pool buys together in the transaction that creates the coin."],
     ["When do I get my tokens?", `Right after launch, in ${config.trancheCount} equal unlocks every ${min(config.trancheIntervalSec)} minutes. Everyone unlocks on the same schedule, so nobody can dump on the rest of the pool.`],
     ["What if the pool doesn't fill?", "If it misses the minimum or the launch fails, everyone takes back 100% of what they put in. The fee is only charged on a successful launch."],
+    ["What can a coin be paired with?", "Anything pump.fun accepts: SOL, USDC, wrapped BTC and ETH, a few other coins, and tokenized stocks like NVIDIA, Tesla or SpaceX. The list comes from pump.fun itself, and the crowd votes on it. SOL is the default. For now only SOL pairs launch for real; the escrow will swap the pool at launch for the others."],
+    ["What are holder rewards?", "A pump.fun setting chosen once, when the coin is created. On: the creator fee from every trade goes to the coin's holders, for good. Off: the fees are split 50% to the pool, 30% to the creator and 20% to the platform. Everyone who joins the pool votes, and each vote counts with the SOL behind it. It replaced pump.fun's old cashback option."],
   ];
 
   return (
