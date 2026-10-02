@@ -1,0 +1,22 @@
+[package]
+name = "mock_pump"
+version = "0.0.0"
+description = "TEST ONLY. Minimal stand-in for pump.fun's create_v2 / buy_exact_quote_in_v2, loaded at pump's program id inside LiteSVM. Never deploy."
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "mock_pump"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "1.2.0"
+anchor-spl = "1.2.0"

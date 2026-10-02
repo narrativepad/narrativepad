@@ -1,0 +1,228 @@
+// End-to-end check of the full flow against a running server in SIMULATION mode, using throwaway
+// ed25519 keys (no real wallets, nothing on-chain). Run the server with short timings, e.g.
+//   VOTE_DURATION_SEC=15 DEPOSIT_WINDOW_SEC=15 LAUNCH_DELAY_SEC=4 LAUNCH_WINDOW_SEC=60 \
+//   TRANCHE_COUNT=3 TRANCHE_INTERVAL_SEC=6 npx next start -p 3100
+// then: node --experimental-strip-types scripts/sim-e2e.ts http://localhost:3100
+import { ed25519 } from "@noble/curves/ed25519.js";
+import bs58 from "bs58";
+import assert from "node:assert/strict";
+import { canonicalJson, fromHex, lockHash, merkleRoot, sha256Hex, uuidBytes } from "../src/lib/math.ts";
+import { buildMessage, type Action, type Payload } from "../src/lib/messages.ts";
+
+const BASE = process.argv[2] ?? "http://localhost:3100";
+const SOL = 1_000_000_000n;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+class Wallet {
+  secret = ed25519.utils.randomSecretKey();
+  address = bs58.encode(ed25519.getPublicKey(this.secret));
+  label: string;
+  constructor(label: string) {
+    this.label = label;
+  }
+
+  async signed<A extends Action>(path: string, action: A, payload: Payload<A>, tamper?: (p: any) => any) {
+    const { nonce } = await (await fetch(`${BASE}/api/auth/nonce?wallet=${this.address}`)).json();
+    const issuedAt = new Date().toISOString();
+    const message = buildMessage({ action, payload, wallet: this.address, nonce, issuedAt, simulation: true });
+    const signature = bs58.encode(ed25519.sign(new TextEncoder().encode(message), this.secret));
+    const body = { wallet: this.address, nonce, issuedAt, signature, payload: tamper ? tamper(structuredClone(payload)) : payload };
+    const send = () => fetch(`${BASE}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const res = await send();
+    return { status: res.status, data: await res.json().catch(() => ({})), replay: send };
+  }
+}
+
+async function detail(slug: string) {
+  return (await fetch(`${BASE}/api/n/${slug}`)).json();
+}
+
+async function waitFor(slug: string, pred: (n: any) => boolean, label: string, timeoutMs = 90_000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const n = await detail(slug);
+    if (pred(n)) return n;
+    await sleep(1000);
+  }
+  throw new Error(`timeout waiting for ${label}`);
+}
+
+let step = 0;
+const ok = (msg: string) => console.log(`  ✓ ${String(++step).padStart(2, "0")} ${msg}`);
+
+// Smallest valid PNG (1x1).
+const PNG = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
+
+async function main() {
+  console.log(`E2E against ${BASE}`);
+  const [alice, bob, carol, dave] = ["alice", "bob", "carol", "dave"].map((l) => new Wallet(l));
+
+  // ---- propose -------------------------------------------------------------------------------
+  const created = await alice.signed("/api/narratives", "create", {
+    pitch: "A cat that went to the moon and refused to come back. Community-built.",
+    sourceUrl: "https://x.com/narrativepad/status/1",
+    name: "Moon Cat",
+    ticker: "mcat",
+  });
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  const { id, slug } = created.data;
+  ok(`created narrative ${slug}`);
+
+  // ---- ballots & votes -----------------------------------------------------------------------
+  const kitty = await bob.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field: "name", value: "Moon Kitty" });
+  assert.equal(kitty.status, 200);
+  const dup = await carol.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field: "name", value: "Moon Kitty" });
+  assert.equal(dup.status, 409);
+  const badTicker = await carol.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field: "ticker", value: "BINANCE" });
+  assert.equal(badTicker.status, 400, "impersonation filter");
+  const badLink = await carol.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field: "x", value: "https://evil.com/x" });
+  assert.equal(badLink.status, 400, "X link must be x.com");
+  const xLink = await carol.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field: "x", value: "https://x.com/mooncat" });
+  assert.equal(xLink.status, 200);
+  ok("submissions: duplicate rejected, impersonation + bad link filtered");
+
+  const fd = new FormData();
+  fd.append("file", new Blob([PNG], { type: "image/png" }), "cat.png");
+  const up = await (await fetch(`${BASE}/api/images`, { method: "POST", body: fd })).json();
+  assert.match(up.path, /^\/api\/images\/[a-f0-9]{64}$/);
+  const img = await dave.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field: "image", value: up.path });
+  assert.equal(img.status, 200);
+  ok("image uploaded (content-addressed) and submitted");
+
+  const withPic = await bob.signed("/api/narratives", "create", {
+    pitch: "A narrative started with its own picture and X account.",
+    name: "Picture Coin",
+    ticker: "PIC",
+    image: up.path,
+    x: "https://x.com/picturecoin",
+  });
+  assert.equal(withPic.status, 200, JSON.stringify(withPic.data));
+  const pic = await detail(withPic.data.slug);
+  assert.equal(pic.ballots.image.entries[0].value, up.path);
+  assert.equal(pic.ballots.x.entries[0].value, "https://x.com/picturecoin");
+  ok("narrative created with a picture + X link → both become first ballot entries");
+
+  let n = await detail(slug);
+  const entry = (field: string, value: string) => n.ballots[field].entries.find((e: any) => e.value === value).id;
+  const vote = (w: Wallet, field: any, value: string) =>
+    w.signed(`/api/narratives/${id}/vote`, "vote", { narrativeId: id, field, submissionId: entry(field, value) });
+
+  for (const w of [bob, carol, dave]) assert.equal((await vote(w, "name", "Moon Kitty")).status, 200);
+  assert.equal((await vote(alice, "name", "Moon Cat")).status, 200);
+  for (const w of [alice, bob, carol]) assert.equal((await vote(w, "ticker", "MCAT")).status, 200);
+  assert.equal((await vote(dave, "image", up.path)).status, 200);
+  assert.equal((await vote(carol, "x", "https://x.com/mooncat")).status, 200);
+  ok("8 signed votes accepted");
+
+  assert.equal((await vote(bob, "name", "Moon Cat")).status, 409);
+  ok("second vote on the same field rejected");
+
+  const tampered = await dave.signed(`/api/narratives/${id}/vote`, "vote", { narrativeId: id, field: "ticker", submissionId: entry("ticker", "MCAT") }, (p) => ({
+    ...p,
+    field: "name",
+    submissionId: entry("name", "Moon Cat"),
+  }));
+  assert.equal(tampered.status, 401);
+  ok("payload tampered after signing → 401");
+
+  const once = await dave.signed(`/api/narratives/${id}/vote`, "vote", { narrativeId: id, field: "ticker", submissionId: entry("ticker", "MCAT") });
+  assert.equal(once.status, 200);
+  assert.equal((await once.replay()).status, 401);
+  ok("nonce replay → 401");
+
+  // ---- lock ----------------------------------------------------------------------------------
+  n = await waitFor(slug, (x) => x.lock && x.escrow, "lock + escrow");
+  assert.equal(n.lock.name, "Moon Kitty");
+  assert.equal(n.lock.symbol, "MCAT");
+  assert.equal(n.stage, "pooling");
+  const metadata = await (await fetch(n.lock.metadataUri.replace(/^https?:\/\/[^/]+/, BASE))).json();
+  const details = sha256Hex(canonicalJson({ narrativeId: id, chain: n.chain, metadata, votesRoot: n.lock.votesRoot, winners: n.lock.winners }));
+  assert.equal(details, n.lock.detailsHash);
+  assert.equal(lockHash(uuidBytes(id), n.lock.name, n.lock.symbol, n.lock.metadataUri, fromHex(details)), n.lock.lockHash);
+  ok(`locked "Moon Kitty" $MCAT; lock hash recomputed independently: ${n.lock.lockHash.slice(0, 16)}…`);
+
+  const audit = await (await fetch(`${BASE}/api/narratives/${id}/votes`)).json();
+  for (const v of audit.votes) {
+    assert.ok(ed25519.verify(bs58.decode(v.signature), new TextEncoder().encode(v.message), bs58.decode(v.voter_wallet)));
+  }
+  const root = merkleRoot(audit.votes.map((v: any) => sha256Hex(`${v.field}|${v.voter_wallet}|${v.submission_id}|${v.signature}`)));
+  assert.equal(root, n.lock.votesRoot);
+  ok(`${audit.votes.length} vote signatures re-verified; votes root matches`);
+
+  assert.equal((await vote(carol, "image", up.path)).status, 409);
+  ok("voting closed after lock");
+
+  // ---- pool ----------------------------------------------------------------------------------
+  const deposit = (w: Wallet, lamports: bigint) =>
+    w.signed(`/api/narratives/${id}/deposit`, "deposit", { narrativeId: id, amountLamports: lamports.toString() });
+  assert.equal((await deposit(alice, SOL)).status, 200);
+  assert.equal((await deposit(bob, 2n * SOL)).status, 200);
+  assert.equal((await deposit(carol, SOL / 2n)).status, 200);
+  assert.equal((await deposit(carol, SOL)).status, 200);
+  const overCap = await deposit(carol, SOL);
+  assert.equal(overCap.status, 409, JSON.stringify(overCap.data));
+  const tooSmall = await deposit(dave, SOL / 100n);
+  assert.equal(tooSmall.status, 409);
+  n = await detail(slug);
+  assert.equal(n.escrow.totalDeposited, (4n * SOL + SOL / 2n).toString());
+  assert.deepEqual(n.deposits.map((d: any) => [d.orderIndex, d.wallet]), [
+    [0, alice.address],
+    [1, bob.address],
+    [2, carol.address],
+    [3, carol.address],
+  ]);
+  ok("deposits: 4.5 SOL in order; per-wallet cap and minimum enforced");
+
+  const earlyRefund = await alice.signed(`/api/narratives/${id}/refund`, "refund", { narrativeId: id });
+  assert.equal(earlyRefund.status, 409);
+  ok("refund refused while pooling");
+
+  // ---- launch --------------------------------------------------------------------------------
+  n = await waitFor(slug, (x) => x.escrow?.launched, "launch");
+  assert.equal(n.stage, "live");
+  assert.equal(n.escrow.platformFee, (45_000_000n).toString(), "1% of 4.5 SOL");
+  ok(`auto-launched: bought ${(Number(n.escrow.tokensBought) / 1e12).toFixed(2)}M tokens, fee 0.045 SOL`);
+
+  const pos = async (w: Wallet) => (await (await fetch(`${BASE}/api/narratives/${id}/position?wallet=${w.address}`)).json()).position;
+  const claim = (w: Wallet) => w.signed(`/api/narratives/${id}/claim`, "claim", { narrativeId: id });
+  const p0 = await pos(alice);
+  assert.equal(p0.unlocked, 1);
+  const c1 = await claim(alice);
+  assert.equal(c1.status, 200);
+  assert.equal(BigInt(c1.data.tokens), BigInt(p0.entitlement) / 3n);
+  assert.equal((await claim(alice)).status, 409);
+  ok("tranche 1/3 claimed; immediate second claim rejected");
+
+  await sleep(6500);
+  const c2 = await claim(alice);
+  assert.equal(c2.status, 200);
+  await sleep(6500);
+  const c3 = await claim(alice);
+  assert.equal(c3.status, 200);
+  const p3 = await pos(alice);
+  assert.equal(p3.claimed, p0.entitlement);
+  assert.equal((await claim(alice)).status, 409);
+  ok("all 3 tranches claimed, exactly the entitlement, never more");
+
+  // ---- refund path ---------------------------------------------------------------------------
+  const c2Res = await bob.signed("/api/narratives", "create", { pitch: "A narrative nobody funds enough, to test refunds.", name: "Thin Pool", ticker: "THIN" });
+  assert.equal(c2Res.status, 200);
+  const { id: id2, slug: slug2 } = c2Res.data;
+  await waitFor(slug2, (x) => x.escrow, "second escrow");
+  const d2 = await carol.signed(`/api/narratives/${id2}/deposit`, "deposit", { narrativeId: id2, amountLamports: (SOL / 2n).toString() });
+  assert.equal(d2.status, 200);
+  const n2 = await waitFor(slug2, (x) => x.stage === "refunding", "refunding");
+  assert.equal(n2.escrow.launched, false);
+  const r1 = await carol.signed(`/api/narratives/${id2}/refund`, "refund", { narrativeId: id2 });
+  assert.equal(r1.status, 200);
+  assert.equal(r1.data.amount, (SOL / 2n).toString());
+  assert.equal((await carol.signed(`/api/narratives/${id2}/refund`, "refund", { narrativeId: id2 })).status, 409);
+  ok("under-minimum pool → refunding; 100% refunded once, double refund rejected");
+
+  console.log(`\nAll ${step} checks passed.`);
+}
+
+main().catch((e) => {
+  console.error("\nE2E FAILED:", e);
+  process.exit(1);
+});

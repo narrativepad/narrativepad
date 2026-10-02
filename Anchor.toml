@@ -1,0 +1,21 @@
+[toolchain]
+anchor_version = "1.2.0"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+narrative_escrow = "42bwRMxcnpbfiH1K68dGuVkgEWdZoWY72fZ7VVVcbVrY"
+
+[programs.devnet]
+narrative_escrow = "42bwRMxcnpbfiH1K68dGuVkgEWdZoWY72fZ7VVVcbVrY"
+
+# Only the escrow is an Anchor workspace member. tests/mock_pump is a test-only
+# stand-in loaded at pump's program id inside LiteSVM and must never be deployed.
+[workspace]
+members = ["programs/narrative_escrow"]
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
