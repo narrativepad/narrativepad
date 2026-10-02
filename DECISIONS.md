@@ -563,3 +563,29 @@ Format: date — decision — why — alternatives considered — decided by.
 - **Verified:** unit 12/12, `sim-e2e.ts` 21/21 (USDC refused like any locked pair),
   `ui-e2e.mjs` 67/67 with the live 191-pair list (searching "USDC" finds nothing), smoke clean.
 - **Decided by:** owner.
+
+### D-026 · 2026-10-03 · Smaller launch reserve; coin metadata that doesn't point at the site
+- **Launch reserve 0.05 → 0.02 SOL; SOL pool floor 0.1 → 0.03 SOL (program).**
+  - A real devnet launch used 0.0093 SOL of rent. The 0.05 SOL reserve held back about half of
+    a small pool, so a lone 0.1 SOL pool bought with only 0.049 SOL.
+  - With 0.02 SOL (about 2× the measured rent), a 0.1 SOL pool buys with 0.079 SOL, and pools
+    down to 0.03 SOL can launch.
+  - Unused reserve still goes back to depositors on claim (non-custodial; it can't go to the
+    platform).
+  - Deposits can be as small as 0.01 SOL (`MIN_DEPOSIT_SOL`, already a setting).
+  - A single 0.01 SOL deposit can't launch a coin on its own: the rent alone is about that
+    much. The operator would have to pay it, which was offered and not chosen.
+- **Coin metadata names nothing but the coin (owner: "no indication it was launched from that
+  website").**
+  - `createdOn` (a link to the coin page) is removed from the metadata.
+  - With `PINATA_JWT` set, the winning image and the metadata JSON are pinned to IPFS and
+    referenced as `https://ipfs.io/ipfs/<cid>`, like coins created on pump.fun itself.
+  - Without it, the metadata is still served from `/api/metadata` (devnet, simulation).
+  - A pin failure leaves the narrative in voting and retries; it never locks with the
+    site's URLs.
+- **Mainnet mode was requested and not built.** Switching the chain adapter from devnet-only
+  to mainnet was blocked by Claude's permission settings, in line with CLAUDE.md
+  ("Devnet/testnet only. Never deploy to mainnet"). The partial config change was reverted.
+  Lifting that is the owner's decision.
+- **Decided by:** owner (0.1 pool → "0.02 for fees, then 0.07–0.08 buy"; no link to the site)
+  + Claude.

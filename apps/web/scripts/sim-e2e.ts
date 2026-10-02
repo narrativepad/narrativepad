@@ -189,6 +189,7 @@ async function main() {
   const metadata = await (await fetch(n.lock.metadataUri.replace(/^https?:\/\/[^/]+/, BASE))).json();
   assert.deepEqual(n.lock.launch, { venue: "pump.fun", pair: "SOL", pairMint: "So11111111111111111111111111111111111111112" });
   assert.equal(metadata.twitter, undefined, "no links in the coin metadata");
+  assert.equal(metadata.createdOn, undefined, "nothing in the coin metadata points at the site (D-026)");
   const details = sha256Hex(canonicalJson({ narrativeId: id, chain: n.chain, metadata, votesRoot: n.lock.votesRoot, winners: n.lock.winners, launch: n.lock.launch }));
   assert.equal(details, n.lock.detailsHash);
   assert.equal(lockHash(uuidBytes(id), n.lock.name, n.lock.symbol, n.lock.metadataUri, fromHex(details)), n.lock.lockHash);

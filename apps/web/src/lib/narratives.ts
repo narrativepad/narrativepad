@@ -9,6 +9,7 @@ import { date, q, q1, transaction } from "./db";
 import { publish } from "./events";
 import { canonicalJson, fromHex, lockHash, merkleRoot, sha256Hex, uuidBytes } from "./math";
 import { COMMENT_MAX_LINES, COMMENT_MAX_WORDS, countWords, FIELDS, normaliseComment, REQUIRED_FIELDS, type Field } from "./messages";
+import { ipfsEnabled, ipfsUrl, pinBytes } from "./ipfs";
 import { HIDE_THRESHOLD, moderateText } from "./moderation";
 import { knownPair, SOL_PAIR, type PairOption } from "./pairs";
 import { poolCurrency } from "./pools";
@@ -275,23 +276,39 @@ export async function finalizeVoting(narrativeId: string): Promise<void> {
     const votesRoot = merkleRoot(votes.map((v) => sha256Hex(`${v.field}|${v.voter_wallet}|${v.submission_id}|${v.signature}`)));
     const name = win.name!.value;
     const symbol = win.ticker!.value;
+    // The site shows its own copy of the picture; the coin's metadata gets the IPFS one (D-026).
     const image = win.image ? `${config.publicUrl}${win.image.value}` : null;
     const links = { twitter: win.x?.value ?? null, telegram: win.telegram?.value ?? null, website: win.website?.value ?? null };
-    // Field names follow pump.fun's metadata JSON.
-    const metadata = {
-      name,
-      symbol,
-      description: n.pitch,
-      image,
-      showName: true,
-      createdOn: `${config.publicUrl}/n/${n.slug}`,
-      twitter: links.twitter ?? undefined,
-      telegram: links.telegram ?? undefined,
-      website: links.website ?? undefined,
-    };
-    const metadataJson = canonicalJson(metadata);
-    // Simulation serves metadata from our API. On-chain mode pins it to IPFS (content-addressed).
-    const metadataUri = `${config.publicUrl}/api/metadata/${narrativeId}`;
+    const pin = ipfsEnabled();
+    let coinImage = image;
+    let metadata;
+    let metadataJson: string;
+    let metadataUri: string;
+    try {
+      if (pin && win.image) {
+        const img = await q1<{ mime: string; data: Uint8Array }>(`SELECT mime, data FROM images WHERE id = $1`, [win.image.value.split("/").pop()]);
+        if (!img) throw new Error("winning image not found");
+        coinImage = ipfsUrl(await pinBytes(img.data, img.mime));
+      }
+      // Field names follow pump.fun's metadata JSON. Only what the crowd chose goes in: nothing
+      // points at this site, so the coin reads like any other pump.fun coin (D-026).
+      metadata = {
+        name,
+        symbol,
+        description: n.pitch,
+        image: coinImage,
+        showName: true,
+        twitter: links.twitter ?? undefined,
+        telegram: links.telegram ?? undefined,
+        website: links.website ?? undefined,
+      };
+      metadataJson = canonicalJson(metadata);
+      // Pinned when configured (always on mainnet); otherwise served by /api/metadata (devnet, simulation).
+      metadataUri = pin ? ipfsUrl(await pinBytes(new TextEncoder().encode(metadataJson), "application/json")) : `${config.publicUrl}/api/metadata/${narrativeId}`;
+    } catch (e) {
+      console.error(`lock for ${narrativeId} waits: IPFS pin failed: ${e instanceof Error ? e.message : e}`);
+      return;
+    }
     const winnerIds = Object.fromEntries(FIELDS.filter((f) => win[f]).map((f) => [f, win[f]!.id]));
     // How the coin launches. Hashed into details, so the on-chain lock hash commits to it too.
     // Creator fees are not here: the pool votes on them with its deposits (D-019). The pair is
