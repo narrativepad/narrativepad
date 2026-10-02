@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers config={cfg}>
           {cfg.simulation && <PreviewBanner />}
           <Header />
-          <main id="main" className="flex w-full flex-1 flex-col px-3 pb-10 pt-4 sm:px-4 lg:px-6 2xl:px-8">
+          <main id="main" className="flex w-full flex-1 flex-col px-4 pt-5 sm:px-5 lg:px-8 2xl:px-10">
             {children}
           </main>
           <Footer />

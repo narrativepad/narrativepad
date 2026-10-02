@@ -12,10 +12,10 @@ export const metadata: Metadata = { title: "Start a narrative" };
 export default async function CreatePage() {
   const open = (await feed()).filter((n) => n.stage === "voting").sort((a, b) => b.votes - a.votes).slice(0, 12);
   return (
-    <div className="flex flex-col gap-3 lg:h-full lg:min-h-[36rem]">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3 px-1">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Start a narrative</h1>
+          <h1 className="text-[2.2rem] font-semibold leading-tight tracking-[-0.04em] sm:text-[2.8rem]"><span className="text-silver">Start a </span><span className="display text-gradient pr-2 text-[1.06em]">narrative</span></h1>
           <p className="text-sm text-muted">A short pitch and a source. The crowd decides the name, ticker, image and links.</p>
         </div>
         <div className="flex gap-2 text-xs text-dim">

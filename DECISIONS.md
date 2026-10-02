@@ -131,3 +131,24 @@ Format: date — decision — why — alternatives considered — decided by.
   pools and creators.
 - **Verified:** Playwright screenshots at 1440, 1920 and 390 px, empty and seeded.
 - **Decided by:** owner (request) + Claude (design).
+
+### D-014 · 2026-10-02 · Premium visual pass
+- **Decision:**
+  - Monochrome base: neutral near-black, white type, and white pill buttons for navigation
+    and creation. Green is kept for money actions and live states. Panels and cards use a
+    top-lit gradient hairline instead of solid borders, over a faint grain and grid with a
+    soft spotlight.
+  - Hero: no box around it. Large silver headline with the serif accent, and an animated
+    "crowd → coin" illustration (avatars orbiting and flowing into a coin; pure CSS, no
+    data). The logo is now a coin mark that matches it.
+  - Explore: the four kanban columns are replaced by stage tabs plus a grid of image-first
+    coin cards (blurred artwork backdrop, big coin, stage-specific footer). A spotlight
+    card shows the next coin to launch, and the empty board is one designed state instead
+    of four blank columns.
+  - How it works on home: six illustrated tiles (decorative, no data) plus four
+    guarantee tiles.
+  - Coin page: larger header with a joined stats strip and a segmented progress bar.
+    Deposit and claim use the green money button.
+- **Why:** Owner feedback after D-013: "still very poor ui, no premium feeling at all."
+- **Supersedes:** D-013's board columns and the ≥1920px home rail.
+- **Decided by:** owner (request) + Claude (design).

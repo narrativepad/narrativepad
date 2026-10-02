@@ -1,15 +1,16 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #06080b;
-  --color-panel: #0c0f14;
-  --color-panel-2: #11151c;
-  --color-panel-3: #171c25;
-  --color-line: #1a2029;
-  --color-line-2: #252d39;
-  --color-ink: #f3f5f8;
-  --color-muted: #9aa3b2;
-  --color-dim: #667082;
+  /* Neutral near-black canvas; colour is reserved for money and live states. */
+  --color-bg: #050607;
+  --color-panel: #0c0d10;
+  --color-panel-2: #121418;
+  --color-panel-3: #191c21;
+  --color-line: #17191d;
+  --color-line-2: #24272d;
+  --color-ink: #f5f6f7;
+  --color-muted: #a3a8b0;
+  --color-dim: #6c717a;
   --color-accent: #3df2a3;
   --color-accent-2: #3cc8f5;
   --color-accent-ink: #02140c;
@@ -22,7 +23,11 @@
   --font-display: var(--font-serif), ui-serif, Georgia, serif;
   --breakpoint-3xl: 120rem;
   --animate-marquee: marquee var(--marquee-duration, 60s) linear infinite;
-  --animate-rise: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-rise: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-spin-slow: orbit 60s linear infinite;
+  --animate-spin-slower: orbit 110s linear infinite reverse;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-inflow: inflow 3.2s cubic-bezier(0.5, 0, 0.75, 0) infinite;
 
   @keyframes marquee {
     from {
@@ -35,11 +40,44 @@
   @keyframes rise {
     from {
       opacity: 0;
-      transform: translateY(6px);
+      transform: translateY(10px);
+      filter: blur(4px);
     }
     to {
       opacity: 1;
       transform: none;
+      filter: none;
+    }
+  }
+  @keyframes orbit {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+  /* A deposit travelling from the crowd ring into the coin. */
+  @keyframes inflow {
+    0% {
+      transform: translateX(var(--from, 240px)) scale(1);
+      opacity: 0;
+    }
+    15% {
+      opacity: 1;
+    }
+    85% {
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(0) scale(0.4);
+      opacity: 0;
     }
   }
 }
@@ -61,21 +99,30 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   background-image:
-    radial-gradient(1100px 480px at 12% -12%, rgb(61 242 163 / 0.07), transparent 62%),
-    radial-gradient(900px 480px at 92% -10%, rgb(60 200 245 / 0.06), transparent 60%);
-  background-attachment: fixed;
+    radial-gradient(70% 55% at 50% -12%, rgb(61 242 163 / 0.085), transparent 70%),
+    radial-gradient(35% 35% at 88% -4%, rgb(60 200 245 / 0.06), transparent 70%);
+  background-repeat: no-repeat;
 }
 
-/* Fine dot grid fading out from the top. */
-body::before {
+/* Film grain + a faint technical grid that fades out below the fold. */
+body::before,
+body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: radial-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1px);
-  background-size: 26px 26px;
-  mask-image: radial-gradient(ellipse at 50% 0%, black 20%, transparent 70%);
+}
+body::before {
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+body::after {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.028) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, black, transparent 75%);
 }
 
 ::selection {
@@ -83,7 +130,7 @@ body::before {
 }
 
 :focus-visible {
-  outline: 2px solid rgb(61 242 163 / 0.7);
+  outline: 2px solid rgb(255 255 255 / 0.55);
   outline-offset: 2px;
 }
 
@@ -101,41 +148,58 @@ body::before {
 }
 
 @layer components {
+  /* Surfaces: a top-lit hairline border (gradient on the border box), no heavy outlines. */
   .panel {
-    @apply rounded-2xl border border-line;
-    background: linear-gradient(180deg, rgb(255 255 255 / 0.025), rgb(255 255 255 / 0) 120px), var(--color-panel);
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+    @apply rounded-[1.25rem];
+    border: 1px solid transparent;
+    background:
+      linear-gradient(rgb(13 14 17 / 0.88), rgb(11 12 15 / 0.92)) padding-box,
+      linear-gradient(180deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.045) 30%, rgb(255 255 255 / 0.03)) border-box;
+    box-shadow: 0 30px 60px -32px rgb(0 0 0 / 0.85);
+  }
+  .glass {
+    @apply border border-white/10 bg-white/[0.045] backdrop-blur-xl;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
   }
   /* Section title on the left, quiet meta on the right. */
   .panel-head {
-    @apply flex items-center justify-between gap-3 border-b border-line px-4 py-3 text-[0.78rem] text-dim;
+    @apply flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-3.5 text-[0.78rem] text-dim;
   }
   .panel-head > :first-child {
-    @apply text-[0.88rem] font-semibold tracking-tight text-ink;
+    @apply text-[0.9rem] font-semibold tracking-tight text-ink;
   }
+
   .btn {
-    @apply inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-line-2 bg-panel-2 px-3.5 py-2 text-sm font-medium text-ink transition-all hover:border-dim/60 hover:bg-panel-3 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40;
+    @apply inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-medium text-ink transition-all duration-200 hover:border-white/20 hover:bg-white/[0.09] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
   }
   .btn-ghost {
-    @apply inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-medium text-muted transition-colors hover:bg-white/[0.05] hover:text-ink;
+    @apply inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium text-muted transition-colors hover:bg-white/[0.06] hover:text-ink;
   }
+  /* Navigation / creation: white. Money actions use .btn-accent. */
   .btn-primary {
-    @apply relative inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-ink transition-all hover:bg-[#5ff7b6] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:grayscale;
+    @apply relative inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-all duration-200 hover:bg-white/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40;
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.4),
-      0 10px 30px -12px rgb(61 242 163 / 0.6);
+      0 0 0 1px rgb(255 255 255 / 0.2),
+      0 10px 34px -10px rgb(255 255 255 / 0.45);
+  }
+  .btn-accent {
+    @apply relative inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-accent-ink transition-all duration-200 hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-dim disabled:shadow-none;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.45),
+      0 12px 36px -12px rgb(61 242 163 / 0.7);
   }
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-xl border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-semibold text-danger transition-colors hover:bg-danger/20 disabled:opacity-40;
   }
   .input {
-    @apply w-full rounded-xl border border-line-2 bg-bg/70 px-3.5 py-2.5 text-sm text-ink outline-none transition-[border-color,box-shadow] placeholder:text-dim focus:border-accent/50;
+    @apply w-full rounded-xl border border-white/[0.08] bg-black/40 px-3.5 py-2.5 text-sm text-ink outline-none transition-[border-color,box-shadow] placeholder:text-dim focus:border-white/25;
   }
   .input:focus {
-    box-shadow: 0 0 0 3px rgb(61 242 163 / 0.12);
+    box-shadow: 0 0 0 4px rgb(255 255 255 / 0.05);
   }
   .chip {
-    @apply inline-flex items-center gap-1 rounded-full border border-line-2 bg-panel-2 px-2 py-0.5 text-[0.72rem] font-medium text-muted;
+    @apply inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[0.72rem] font-medium text-muted;
   }
   /* Numbers: proportional sans with tabular figures. Hashes and addresses use .mono. */
   .num {
@@ -149,13 +213,19 @@ body::before {
     @apply text-[0.75rem] font-medium text-dim;
   }
   .eyebrow {
-    @apply text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-dim;
+    @apply text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-dim;
   }
   .scroll-y {
     @apply overflow-y-auto overscroll-contain;
   }
   .text-gradient {
-    background: linear-gradient(120deg, var(--color-accent) 10%, var(--color-accent-2) 90%);
+    background: linear-gradient(110deg, #c9ffe9 0%, var(--color-accent) 35%, var(--color-accent-2) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-silver {
+    background: linear-gradient(180deg, #ffffff 30%, #9aa0a8 120%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -164,31 +234,43 @@ body::before {
     font-family: var(--font-display);
     font-style: italic;
     font-weight: 400;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
   }
+  /* Coin cards: same top-lit border, brightening on hover. */
   .card {
-    @apply relative block rounded-xl border border-line bg-panel-2/50 p-3.5 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-px hover:border-line-2 hover:bg-panel-2;
+    @apply relative block overflow-hidden rounded-[1.25rem] transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5;
+    border: 1px solid transparent;
+    background:
+      linear-gradient(rgb(14 15 18), rgb(11 12 14)) padding-box,
+      linear-gradient(180deg, rgb(255 255 255 / 0.13), rgb(255 255 255 / 0.04) 35%, rgb(255 255 255 / 0.03)) border-box;
+    box-shadow: 0 24px 50px -30px rgb(0 0 0 / 0.9);
+  }
+  .card:hover {
+    background:
+      linear-gradient(rgb(16 17 20), rgb(12 13 15)) padding-box,
+      linear-gradient(180deg, rgb(255 255 255 / 0.28), rgb(255 255 255 / 0.08) 40%, rgb(255 255 255 / 0.05)) border-box;
+    box-shadow: 0 30px 60px -28px rgb(0 0 0 / 0.95);
   }
 }
 
-/* Solana wallet-adapter, themed. */
+/* Solana wallet-adapter, themed to the glass pill buttons. */
 .wallet-adapter-button {
   font-family: var(--font-sans) !important;
-  height: 2.25rem !important;
-  border-radius: 0.75rem !important;
+  height: 2.375rem !important;
+  border-radius: 999px !important;
   font-size: 0.85rem !important;
   font-weight: 500 !important;
-  padding: 0 0.9rem !important;
+  padding: 0 1rem !important;
   line-height: 1 !important;
   white-space: nowrap !important;
 }
 .wallet-adapter-button-trigger {
-  background: var(--color-panel-2) !important;
-  border: 1px solid var(--color-line-2) !important;
+  background: rgb(255 255 255 / 0.05) !important;
+  border: 1px solid rgb(255 255 255 / 0.1) !important;
   color: var(--color-ink) !important;
 }
 .wallet-adapter-button-trigger:not([disabled]):hover {
-  background: var(--color-panel-3) !important;
+  background: rgb(255 255 255 / 0.09) !important;
 }
 .wallet-adapter-button-start-icon,
 .wallet-adapter-button-start-icon img {
@@ -198,7 +280,7 @@ body::before {
 .wallet-adapter-modal-wrapper {
   background: var(--color-panel) !important;
   border: 1px solid var(--color-line-2);
-  border-radius: 1rem !important;
+  border-radius: 1.25rem !important;
 }
 
 @keyframes pulse-dot {
@@ -217,7 +299,11 @@ body::before {
 @media (prefers-reduced-motion: reduce) {
   .live-dot,
   .animate-marquee,
-  .animate-rise {
+  .animate-rise,
+  .animate-spin-slow,
+  .animate-spin-slower,
+  .animate-float,
+  .animate-inflow {
     animation: none;
   }
 }

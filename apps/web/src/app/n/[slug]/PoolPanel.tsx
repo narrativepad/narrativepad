@@ -77,7 +77,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
       <div className="space-y-4 p-4">
         <div>
           <div className="flex items-baseline justify-between">
-            <span className="num text-[1.9rem] font-semibold leading-none tracking-tight">
+            <span className="num text-[2.2rem] font-semibold leading-none tracking-[-0.03em]">
               {formatSol(total)} <span className="text-base font-normal text-dim">SOL</span>
             </span>
             <span className="num text-sm text-muted">{fillPct}% of {formatSol(cap)}</span>
@@ -94,7 +94,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
         </div>
 
         {pooling && (
-          <form onSubmit={deposit} className="rounded-2xl border border-line-2 bg-bg/60 p-3">
+          <form onSubmit={deposit} className="rounded-2xl border border-white/[0.07] bg-black/35 p-4">
             <div className="flex items-center justify-between text-[0.72rem] text-dim">
               <span>You put in</span>
               <button type="button" className="hover:text-accent" onClick={() => setAmount(formatSol(room, 9).replace(/,/g, ""))}>
@@ -103,14 +103,14 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
             </div>
             <div className="mt-1 flex items-center gap-2">
               <input
-                className="num w-full bg-transparent text-[1.75rem] font-semibold tracking-tight outline-none placeholder:text-line-2"
+                className="num w-full bg-transparent text-[2rem] font-semibold tracking-[-0.03em] outline-none placeholder:text-white/15"
                 inputMode="decimal"
                 placeholder="0.00"
                 value={amount}
                 onChange={(x) => setAmount(x.target.value.replace(",", "."))}
                 aria-label="Amount in SOL"
               />
-              <span className="flex shrink-0 items-center gap-1.5 rounded-xl border border-line-2 bg-panel-2 px-2.5 py-1.5 text-sm font-semibold">
+              <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] py-1.5 pl-1.5 pr-3 text-sm font-semibold">
                 <span className="h-4 w-4 rounded-full bg-gradient-to-br from-[#9945ff] to-[#14f195]" /> SOL
               </span>
             </div>
@@ -120,8 +120,8 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
                   key={qv}
                   type="button"
                   onClick={() => setAmount(qv)}
-                  className={`num flex-1 rounded-lg border px-2 py-1 text-xs transition-colors ${
-                    amount === qv ? "border-accent/50 bg-accent/10 text-accent" : "border-line-2 text-muted hover:text-ink"
+                  className={`num flex-1 rounded-full border px-2 py-1.5 text-xs font-medium transition-colors ${
+                    amount === qv ? "border-white/40 bg-white/10 text-ink" : "border-white/[0.08] text-muted hover:border-white/20 hover:text-ink"
                   }`}
                 >
                   {qv}
@@ -152,7 +152,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
                 100% back if the pool misses {formatSol(min)} SOL or the launch fails.
               </li>
             </ul>
-            <button className="btn-primary mt-3 w-full py-2.5" disabled={!parsed || !!amountError || busy !== null}>
+            <button className="btn-accent mt-3 h-12 w-full text-[0.95rem]" disabled={!parsed || !!amountError || busy !== null}>
               {busy === "deposit" ? "Joining…" : "Join the pool"}
             </button>
             {n.preview && <p className="mt-2 text-center text-[0.72rem] text-warn/80">Preview build: this deposit is simulated. No SOL leaves your wallet.</p>}
@@ -160,7 +160,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
         )}
 
         {position && (
-          <div className="rounded-2xl border border-line-2 bg-bg/60 p-3">
+          <div className="rounded-2xl border border-white/[0.07] bg-black/35 p-4">
             <div className="mb-1.5 text-sm font-semibold">Your position</div>
             <Row k="In the pool" v={`${formatSol(BigInt(position.deposited))} SOL`} />
             <Row k="Your share" v={`${position.sharePct.toFixed(2)}%`} />
@@ -172,7 +172,7 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
             )}
             {e.launched && (
               <button
-                className="btn-primary mt-3 w-full py-2.5"
+                className="btn-accent mt-3 h-11 w-full"
                 disabled={claimable <= 0n || busy !== null}
                 onClick={() => run("claim", `/api/narratives/${n.id}/claim`, "claim", { narrativeId: n.id }, "Claimed")}
               >
@@ -244,7 +244,7 @@ function Depositors({ n }: { n: NarrativeDetail }) {
         <span className="label">{e.launched ? "Community pool buy · every depositor" : "Deposits, in order"}</span>
         <span className="num text-xs text-dim">{n.deposits.length}</span>
       </div>
-      <ol className="max-h-80 divide-y divide-line overflow-y-auto rounded-xl border border-line">
+      <ol className="max-h-80 divide-y divide-white/[0.05] overflow-y-auto rounded-xl border border-white/[0.07] bg-black/20">
         {[...list].reverse().map((d) => (
           <li key={d.orderIndex} className="flex items-center gap-2.5 px-3 py-2 text-[0.8rem]">
             <span className="num w-5 text-[0.7rem] text-dim">#{d.orderIndex + 1}</span>

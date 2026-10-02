@@ -21,13 +21,12 @@ function Item({ a }: { a: GlobalActivityItem }) {
         ? `${formatTokens(BigInt(a.amount ?? "0"))}`
         : null;
   return (
-    <Link href={`/n/${a.slug}`} className="flex shrink-0 items-center gap-2 px-5 text-[0.78rem] text-muted hover:text-ink">
+    <Link href={`/n/${a.slug}`} className="flex shrink-0 items-center gap-2 px-6 text-[0.8rem] text-dim transition-colors hover:text-ink">
       <Avatar address={a.wallet} size={16} />
-      <span className="text-ink/85">{displayName(a.wallet)}</span>
+      <span className="text-muted">{displayName(a.wallet)}</span>
       {amount && <span className={`num font-medium ${v.tone}`}>{amount}</span>}
       <span>{v.verb}</span>
       <span className="font-medium text-ink">{a.title}</span>
-      <span className="text-line-2">•</span>
     </Link>
   );
 }
@@ -35,21 +34,25 @@ function Item({ a }: { a: GlobalActivityItem }) {
 /** Scrolling tape of the latest activity across all narratives. */
 export function Ticker({ items }: { items: GlobalActivityItem[] }) {
   if (items.length === 0) return null;
-  const duration = `${Math.max(30, items.length * 5)}s`;
+  const duration = `${Math.max(40, items.length * 6)}s`;
   return (
-    <div
-      className="group relative overflow-hidden rounded-xl border border-line bg-panel/70 py-2"
-      style={{ maskImage: "linear-gradient(90deg, transparent, black 6%, black 94%, transparent)" }}
-      aria-label="Recent activity"
-    >
-      <div className="flex w-max animate-marquee group-hover:[animation-play-state:paused]" style={{ ["--marquee-duration" as string]: duration }}>
-        {[0, 1].map((copy) => (
-          <div key={copy} className="flex" aria-hidden={copy === 1}>
-            {items.map((a, i) => (
-              <Item key={`${copy}-${i}`} a={a} />
-            ))}
-          </div>
-        ))}
+    <div className="flex items-center gap-4 border-y border-white/[0.06] py-3" aria-label="Recent activity">
+      <span className="flex shrink-0 items-center gap-2 text-[0.75rem] font-semibold text-ink">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent live-dot" /> Live
+      </span>
+      <div
+        className="group relative min-w-0 flex-1 overflow-hidden"
+        style={{ maskImage: "linear-gradient(90deg, transparent, black 5%, black 95%, transparent)" }}
+      >
+        <div className="flex w-max animate-marquee group-hover:[animation-play-state:paused]" style={{ ["--marquee-duration" as string]: duration }}>
+          {[0, 1].map((copy) => (
+            <div key={copy} className="flex" aria-hidden={copy === 1}>
+              {items.map((a, i) => (
+                <Item key={`${copy}-${i}`} a={a} />
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

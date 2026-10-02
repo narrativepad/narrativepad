@@ -29,8 +29,8 @@ export default async function LeaderboardPage() {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3 px-1">
         <div>
-          <h1 className="text-[1.6rem] font-semibold tracking-tight">Leaderboard</h1>
-          <p className="text-sm text-muted">The people whose narratives the crowd backs, and the voters with the best eye.</p>
+          <h1 className="text-[2.2rem] font-semibold leading-tight tracking-[-0.04em] sm:text-[2.8rem]"><span className="text-silver">The </span><span className="display text-gradient pr-2 text-[1.06em]">leaderboard</span></h1>
+          <p className="mt-1 text-[0.95rem] text-muted">The people whose narratives the crowd backs, and the voters with the best eye.</p>
         </div>
       </div>
 

@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { Coin, Icon, StageBadge } from "@/components/bits";
+import { Coin, Icon, Logo, StageBadge } from "@/components/bits";
+import { CoinCard } from "@/components/CoinCard";
 import { usePublicConfig, useToast } from "@/components/Providers";
 import { useSigned } from "@/lib/client/useSigned";
 
@@ -27,6 +28,8 @@ export function CreateForm() {
   const [image, setImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [drag, setDrag] = useState(false);
+  // The preview card counts down from the full voting window, as the real one will.
+  const [previewEnds] = useState(() => new Date(Date.now() + cfg.voteDurationSec * 1000).toISOString());
 
   const cleanTicker = ticker.replace(/^\$/, "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
   const sourceOk = !sourceUrl || /^https:\/\/\S+\.\S+/.test(sourceUrl);
@@ -74,7 +77,7 @@ export function CreateForm() {
           </span>
         </div>
         <div className="scroll-y flex flex-1 flex-col gap-5 p-5">
-          <div className="grid min-h-0 flex-1 gap-5 md:grid-cols-[11rem_minmax(0,1fr)]">
+          <div className="grid gap-5 md:grid-cols-[11rem_minmax(0,1fr)]">
             <div>
               <span className="label">Picture</span>
               <input
@@ -136,7 +139,7 @@ export function CreateForm() {
               </div>
               <textarea
                 id="pitch"
-                className="input mt-1.5 min-h-40 flex-1 resize-none text-[0.98rem] leading-relaxed"
+                className="input mt-1.5 h-[11rem] resize-none text-[1rem] leading-relaxed"
                 placeholder="What's the narrative? Why does it deserve a coin right now?"
                 maxLength={280}
                 value={pitch}
@@ -210,29 +213,24 @@ export function CreateForm() {
       <div className="flex min-h-0 flex-col gap-3">
         <section className="panel">
           <div className="panel-head"><span>On the board</span></div>
-          <div className="p-3">
-            <div className="card">
-              <span className="absolute inset-y-3 left-0 w-0.5 rounded-full bg-violet opacity-70" aria-hidden />
-              <div className="flex items-start gap-3">
-                <Coin image={image} ticker={cleanTicker || null} size={46} stage="voting" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <h3 className="truncate font-semibold tracking-tight">{title}</h3>
-                    {cleanTicker && <span className="num text-[0.72rem] text-dim">${cleanTicker}</span>}
-                  </div>
-                  <p className="mt-1 line-clamp-2 break-words text-[0.8rem] text-muted">{pitch || "Your pitch shows up here."}</p>
-                </div>
-              </div>
-              <div className="mt-3 flex items-center justify-between text-[0.75rem]">
-                <span className="flex items-center gap-1.5 text-muted">
-                  <Icon name="vote" className="h-3.5 w-3.5" /> 0 votes
-                </span>
-                <span className="num flex items-center gap-1.5 text-violet">
-                  <Icon name="clock" className="h-3.5 w-3.5" />
-                  {Math.round(cfg.voteDurationSec / 60)}:00
-                </span>
-              </div>
-            </div>
+          <div className="p-4">
+            <CoinCard
+              n={{
+                id: "preview",
+                slug: "preview",
+                pitch: pitch || "Your pitch shows up here.",
+                stage: "voting",
+                title,
+                ticker: cleanTicker || null,
+                image,
+                createdAt: previewEnds,
+                voteEndsAt: previewEnds,
+                creator: "",
+                votes: 0,
+                escrow: null,
+                flow: null,
+              }}
+            />
           </div>
         </section>
 
@@ -245,7 +243,7 @@ export function CreateForm() {
                 <img src={image} alt="" className="pointer-events-none absolute -right-10 -top-10 h-3/4 opacity-25 blur-2xl" />
               )}
               <div className="relative flex items-center gap-2 text-[0.7rem] text-muted">
-                <span className="h-5 w-5 rounded-md bg-gradient-to-br from-accent to-accent-2" />
+                <Logo size={18} />
                 narrativepad
                 <span className="ml-auto">
                   <StageBadge stage="voting" />

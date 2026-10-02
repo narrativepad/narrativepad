@@ -15,7 +15,7 @@ for (const [w, h] of sizes) {
   const page = await ctx.newPage();
   for (const p of paths) {
     await page.goto(base + p, { waitUntil: "networkidle" }).catch(() => {});
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(Number(process.env.WAIT ?? 600));
     const name = `${(p.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "home")}-${w}x${h}.png`;
     await page.screenshot({ path: join(out, name), fullPage: process.env.FULL === "1" });
     console.log(join(out, name));

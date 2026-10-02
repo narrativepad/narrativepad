@@ -18,7 +18,7 @@ export function StageBadge({ stage }: { stage: Stage }) {
   const s = STAGE[stage];
   const animated = stage !== "cancelled" && stage !== "refunding";
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[0.72rem] font-semibold ${s.bg} ${s.text}`}>
+    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[0.72rem] font-semibold ring-1 ring-inset ${s.bg} ${s.text} ${s.ring}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${s.dot} ${animated ? "live-dot" : ""}`} />
       {s.label}
     </span>
@@ -33,17 +33,20 @@ export function TeamBadge() {
   );
 }
 
+/** The mark is a coin: same metal as the hero coin. */
 export function Logo({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
       <defs>
-        <linearGradient id="np-logo" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#3df2a3" />
-          <stop offset="1" stopColor="#3cc8f5" />
+        <linearGradient id="np-logo" x1="0.2" y1="0" x2="0.8" y2="1">
+          <stop offset="0" stopColor="#e2fff3" />
+          <stop offset="0.45" stopColor="#3df2a3" />
+          <stop offset="1" stopColor="#1596c4" />
         </linearGradient>
       </defs>
-      <rect width="32" height="32" rx="9" fill="url(#np-logo)" />
-      <path d="M10 22V10l12 12V10" fill="none" stroke="#02140c" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="16" cy="16" r="15.5" fill="url(#np-logo)" />
+      <circle cx="16" cy="16" r="12.3" fill="none" stroke="#02140c" strokeOpacity="0.22" strokeWidth="1" />
+      <path d="M11.6 21V11l8.8 10V11" fill="none" stroke="#02140c" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -70,17 +73,23 @@ export function Who({ address, size = 18, className = "" }: { address: string; s
   );
 }
 
+/** Background for a coin with no picture yet, derived from its ticker so it stays stable. */
+export function coinTint(ticker: string | null) {
+  const [a, b] = avatarHues(ticker ?? "?");
+  return `radial-gradient(circle at 30% 22%, hsl(${a} 75% 62% / 0.85), transparent 58%), linear-gradient(140deg, hsl(${a} 50% 26%), hsl(${b} 55% 14%))`;
+}
+
 export function Coin({ image, ticker, size = 44, stage }: { image: string | null; ticker: string | null; size?: number; stage?: Stage }) {
-  const ring = stage ? `ring-2 ${STAGE[stage].ring}` : "ring-1 ring-white/10";
-  const radius = size >= 64 ? "rounded-2xl" : "rounded-xl";
+  const ring = stage ? `ring-2 ${STAGE[stage].ring}` : "ring-1 ring-white/15";
+  const radius = size >= 96 ? "rounded-[1.6rem]" : size >= 64 ? "rounded-2xl" : "rounded-xl";
   if (image) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={image} alt="" className={`shrink-0 object-cover ${radius} ${ring}`} style={{ width: size, height: size }} />;
   }
   return (
     <div
-      className={`flex shrink-0 items-center justify-center bg-gradient-to-br from-panel-3 to-bg font-mono font-bold text-muted ${radius} ${ring}`}
-      style={{ width: size, height: size, fontSize: Math.max(10, size / 4) }}
+      className={`flex shrink-0 items-center justify-center font-semibold tracking-tight text-white/90 ${radius} ${ring}`}
+      style={{ width: size, height: size, fontSize: Math.max(10, size / 3.6), background: coinTint(ticker) }}
     >
       {(ticker ?? "?").slice(0, 3)}
     </div>

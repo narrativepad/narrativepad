@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Activity } from "@/components/Activity";
-import { Coin, Icon, StageBadge, STAGE, TeamBadge, Who } from "@/components/bits";
+import { Coin, coinTint, Icon, StageBadge, STAGE, TeamBadge, Who } from "@/components/bits";
 import { Countdown } from "@/components/Countdown";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { formatSol, formatTokens, launchBreakdown, PUMP } from "@/lib/math";
@@ -30,29 +30,26 @@ function Stepper({ stage }: { stage: Stage }) {
   const at = STEP_INDEX[stage];
   const failed = stage === "refunding" || stage === "cancelled";
   return (
-    <ol className="flex items-center gap-2 overflow-x-auto text-[0.75rem] font-medium" aria-label="Progress">
+    <ol className="grid grid-cols-5 gap-1.5 sm:gap-2.5" aria-label="Progress">
       {STEPS.map((s, i) => {
         const done = i < at || (stage === "live" && i === at);
         const current = i === at && stage !== "live";
         return (
-          <li key={s} className="flex shrink-0 items-center gap-2">
-            {i > 0 && <span className={`h-px w-6 sm:w-12 ${done || current ? "bg-gradient-to-r from-accent/60 to-accent-2/60" : "bg-line-2"}`} />}
-            <span className={`flex items-center gap-2 ${current ? (failed ? "text-danger" : "text-ink") : done ? "text-accent" : "text-dim"}`}>
-              <span
-                className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.62rem] ${
-                  done
-                    ? "bg-gradient-to-br from-accent to-accent-2 text-accent-ink"
-                    : current
-                      ? failed
-                        ? "border border-danger"
-                        : "border border-accent text-accent shadow-[0_0_14px_-2px_var(--color-accent)]"
-                      : "border border-line-2"
-                }`}
-              >
-                {done ? <Icon name="check" className="h-3 w-3" /> : i + 1}
-              </span>
+          <li key={s} aria-current={current ? "step" : undefined}>
+            <div
+              className={`h-1 rounded-full ${
+                done ? "bg-accent" : current ? (failed ? "bg-danger" : "bg-gradient-to-r from-accent to-accent/20") : "bg-white/[0.08]"
+              }`}
+            />
+            <div
+              className={`mt-2 flex items-center gap-1.5 text-[0.72rem] font-medium sm:text-[0.8rem] ${
+                current ? (failed ? "text-danger" : "text-ink") : done ? "text-accent" : "text-dim"
+              }`}
+            >
+              {done && <Icon name="check" className="hidden h-3.5 w-3.5 sm:block" />}
+              {current && !failed && <span className="hidden h-1.5 w-1.5 rounded-full bg-accent live-dot sm:block" />}
               {s}
-            </span>
+            </div>
           </li>
         );
       })}
@@ -62,13 +59,13 @@ function Stepper({ stage }: { stage: Stage }) {
 
 function Stat({ label, children, tone, sub, icon }: { label: string; children: React.ReactNode; tone?: string; sub?: React.ReactNode; icon: Parameters<typeof Icon>[0]["name"] }) {
   return (
-    <div className="min-w-0 rounded-xl border border-white/[0.06] bg-black/25 px-4 py-3 backdrop-blur-sm">
+    <div className="min-w-0 bg-[#0c0d10]/80 px-5 py-4">
       <div className="flex items-center gap-1.5 text-dim">
         <Icon name={icon} className="h-3.5 w-3.5" />
         <span className="label">{label}</span>
       </div>
-      <div className={`num mt-1.5 truncate text-xl font-semibold leading-none ${tone ?? ""}`}>{children}</div>
-      {sub && <div className="num mt-1 truncate text-[0.7rem] text-dim">{sub}</div>}
+      <div className={`num mt-2 truncate text-[1.5rem] font-semibold leading-none tracking-tight ${tone ?? ""}`}>{children}</div>
+      {sub && <div className="num mt-1.5 truncate text-[0.72rem] text-dim">{sub}</div>}
     </div>
   );
 }
@@ -145,37 +142,43 @@ export default async function NarrativePage({ params }: { params: Promise<{ slug
   const s = STAGE[n.stage];
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       <LiveRefresh narrativeId={n.id} />
-      <Link href="/#board" className="flex w-fit items-center gap-1.5 px-1 text-[0.82rem] text-muted transition-colors hover:text-ink">
-        <Icon name="arrow" className="h-3.5 w-3.5 rotate-180" /> Back to the board
+      <Link href="/#explore" className="flex w-fit items-center gap-1.5 text-[0.85rem] text-muted transition-colors hover:text-ink">
+        <Icon name="arrow" className="h-3.5 w-3.5 rotate-180" /> All narratives
       </Link>
 
       <section className="panel relative overflow-hidden">
-        {n.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={n.image} alt="" aria-hidden className="pointer-events-none absolute -left-1/4 -top-1/2 h-[200%] w-[80%] scale-110 object-cover opacity-[0.22] blur-[90px] saturate-150" />
-        ) : (
-          <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full blur-3xl" style={{ background: `${s.hex}22` }} />
-        )}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-panel/40 to-panel" />
-        <div className="relative grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,46rem)] lg:items-center 2xl:p-6">
-          <div className="flex min-w-0 gap-5">
-            <Coin image={n.image} ticker={n.ticker} size={104} stage={n.stage} />
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <h1 className="text-[1.9rem] font-semibold leading-none tracking-tight sm:text-[2.3rem]">{n.title}</h1>
-                {n.ticker && <span className="num text-lg text-muted">${n.ticker}</span>}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[1.25rem]">
+          {n.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={n.image} alt="" aria-hidden className="absolute -left-[10%] -top-1/2 h-[200%] w-[75%] object-cover opacity-35 blur-[90px] saturate-150" />
+          ) : (
+            <div className="absolute -left-24 -top-24 h-96 w-[40rem] rounded-full opacity-40 blur-3xl" style={{ background: coinTint(n.ticker) }} />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#0c0d10]/50 to-[#0c0d10]/90" />
+        </div>
+        <div className="relative grid gap-7 p-5 sm:p-7 xl:grid-cols-[minmax(0,1fr)_minmax(0,44rem)] xl:items-center 2xl:p-9">
+          <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center sm:gap-7">
+            <div className="w-fit rounded-[1.6rem] shadow-[0_30px_70px_-20px_rgb(0_0_0/0.95)]">
+              <Coin image={n.image} ticker={n.ticker} size={128} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <StageBadge stage={n.stage} />
+                <span className={`text-[0.85rem] ${s.text}`}>{STAGE_LINE[n.stage]}</span>
               </div>
-              <p className={`text-sm ${s.text}`}>{STAGE_LINE[n.stage]}</p>
-              <p className="line-clamp-3 max-w-3xl break-words text-[0.98rem] leading-relaxed text-ink/90">{n.pitch}</p>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-dim">
+              <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h1 className="text-silver text-[2.4rem] font-semibold leading-[1] tracking-[-0.04em] sm:text-[3.2rem]">{n.title}</h1>
+                {n.ticker && <span className="num text-[1.2rem] font-medium text-muted">${n.ticker}</span>}
+              </div>
+              <p className="mt-3 line-clamp-3 max-w-2xl break-words text-[1.02rem] leading-relaxed text-ink/85">{n.pitch}</p>
+              <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[0.8rem] text-dim">
                 <span className="flex items-center gap-1.5">
-                  started by <Who address={n.creator} size={16} className="text-muted" /> {n.creatorIsTeam && <TeamBadge />}
+                  started by <Who address={n.creator} size={18} className="text-muted" /> {n.creatorIsTeam && <TeamBadge />}
                 </span>
                 {n.sourceUrl && (
-                  <a href={n.sourceUrl} target="_blank" rel="noopener noreferrer nofollow" className="flex max-w-[22rem] items-center gap-1 truncate text-accent hover:underline">
+                  <a href={n.sourceUrl} target="_blank" rel="noopener noreferrer nofollow" className="flex max-w-[22rem] items-center gap-1.5 truncate text-muted hover:text-ink">
                     <Icon name="link" className="h-3.5 w-3.5 shrink-0" />
                     {n.sourceUrl.replace(/^https:\/\//, "")}
                   </a>
@@ -184,17 +187,17 @@ export default async function NarrativePage({ params }: { params: Promise<{ slug
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.07] backdrop-blur-md sm:grid-cols-4">
             <HeroStats n={n} />
           </div>
         </div>
-        <div className="relative border-t border-white/[0.05] bg-black/20 px-5 py-3 2xl:px-6">
+        <div className="relative border-t border-white/[0.06] px-5 py-4 sm:px-7 2xl:px-9">
           <Stepper stage={n.stage} />
         </div>
       </section>
 
       {e?.launched && (
-        <section className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-accent/25 bg-gradient-to-r from-accent/[0.08] to-transparent px-4 py-3 text-sm">
+        <section className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-accent/20 bg-gradient-to-r from-accent/[0.08] to-transparent px-5 py-3.5 text-sm">
           <span className="flex items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-0.5 text-[0.7rem] font-semibold text-accent">
             <Icon name="shield" className="h-3.5 w-3.5" /> Community pool buy
           </span>
@@ -205,12 +208,12 @@ export default async function NarrativePage({ params }: { params: Promise<{ slug
         </section>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_26rem] lg:items-start 3xl:grid-cols-[minmax(0,1fr)_30rem]">
-        <div className="flex min-w-0 flex-col gap-3">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_27rem] lg:items-start 3xl:grid-cols-[minmax(0,1fr)_31rem]">
+        <div className="flex min-w-0 flex-col gap-4">
           {e && n.flow.length > 0 && <PoolChart n={n} />}
-          <div className="flex items-baseline justify-between gap-3 px-1">
-            <h2 className="text-base font-semibold tracking-tight">{n.stage === "voting" ? "Ballots" : "Final ballots"}</h2>
-            <span className="text-xs text-dim">
+          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <h2 className="text-[1.35rem] font-semibold tracking-[-0.025em]">{n.stage === "voting" ? "Ballots" : "Final ballots"}</h2>
+            <span className="text-[0.8rem] text-dim">
               {n.stage === "voting" ? "One vote per person per field · highest wins · ties go to the earliest entry" : "Locked and hashed when voting ended"}
             </span>
           </div>
@@ -219,7 +222,7 @@ export default async function NarrativePage({ params }: { params: Promise<{ slug
         </div>
 
         {/* On phones the pool (the thing you act on) comes straight after the hero. */}
-        <div className={`flex min-w-0 flex-col gap-3 ${e ? "max-lg:order-first" : ""}`}>
+        <div className={`flex min-w-0 flex-col gap-4 ${e ? "max-lg:order-first" : ""}`}>
           {e ? (
             <PoolPanel n={n} version={version} />
           ) : (
@@ -227,15 +230,15 @@ export default async function NarrativePage({ params }: { params: Promise<{ slug
               <div className="panel-head">
                 <span>What happens next</span>
               </div>
-              <ol className="space-y-4 p-4 text-sm text-muted">
+              <ol className="space-y-5 p-5 text-[0.88rem] leading-relaxed text-muted">
                 {[
                   ["lock", "Lock", "The winning name, ticker, image and links are frozen and hashed."],
                   ["coins", "Pool", "A public pool opens. Everyone who joins gets the same price."],
                   ["rocket", "Launch", "The coin is created and the whole pool buys in, in one transaction."],
                   ["spark", "Release", "Tokens unlock to everyone in equal tranches. Pool too small? Everyone gets 100% back."],
                 ].map(([icon, t, d]) => (
-                  <li key={t} className="flex gap-3">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/[0.04] text-accent">
+                  <li key={t} className="flex gap-3.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-inset ring-accent/20">
                       <Icon name={icon as "lock"} className="h-4 w-4" />
                     </span>
                     <span>
