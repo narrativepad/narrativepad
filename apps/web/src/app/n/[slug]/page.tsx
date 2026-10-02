@@ -109,9 +109,15 @@ function HeroStats({ n }: { n: NarrativeDetail }) {
         {formatSol(total)} SOL
       </Stat>
       <Stat icon="users" label="In the pool">{e.depositorCount}</Stat>
-      <Stat icon="rocket" label="Opening buy" sub="of total supply">
-        {projected.pctOfSupply.toFixed(1)}%
-      </Stat>
+      {n.stage === "refunding" ? (
+        <Stat icon="rocket" label="Needed to launch" sub="pool minimum">
+          {formatSol(BigInt(e.poolMin))} SOL
+        </Stat>
+      ) : (
+        <Stat icon="rocket" label="Opening buy" sub="of total supply">
+          {projected.pctOfSupply.toFixed(1)}%
+        </Stat>
+      )}
       <Stat icon="clock" label={n.stage === "pooling" ? "Pool closes" : n.stage === "launching" ? "Launch in" : "Refunded"} tone={n.stage === "refunding" ? "text-danger" : "text-warn"}>
         {n.stage === "pooling" ? (
           <Countdown to={e.depositEnd} done="closing…" />
@@ -202,8 +208,8 @@ export default async function NarrativePage({ params }: { params: Promise<{ slug
             <Icon name="shield" className="h-3.5 w-3.5" /> Community pool buy
           </span>
           <span className="text-muted">
-            The opening buy was made for <span className="num font-medium text-ink">{e.depositorCount}</span> people at one price, together. Not an
-            insider bundle.
+            The opening buy was made for <span className="num font-medium text-ink">{e.depositorCount}</span>{" "}
+            {e.depositorCount === 1 ? "person" : "people"} at one price, together. Not an insider bundle.
           </span>
         </section>
       )}
