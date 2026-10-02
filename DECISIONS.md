@@ -408,4 +408,50 @@ Format: date — decision — why — alternatives considered — decided by.
   The site deployed right after, because the launch account layout changed.
 - **Still open for mainnet:** pump pays holder rewards through its own off-chain distributor.
   Whether that includes the vault while tokens vest needs confirming with pump before mainnet.
+
+### D-023 · 2026-10-02 · Non-SOL pairs: token pools, swapped by each depositor
+- **Decision:** a coin paired with a token (USDC, NVDAx, WBTC…) gets a pool that holds that
+  token. Each depositor's wallet swaps into it when joining; the escrow never swaps the pool.
+  Chosen by Claude after the owner left the call to it ("idk what's easier better").
+- **Why not swap the pool at launch:**
+  - one large, predictable swap of the whole pool can be sandwiched by whoever triggers the
+    launch; guarding against that needs an on-chain price oracle (stock prices freeze out of
+    market hours);
+  - Jupiter and xStocks don't exist on devnet, so it could never be tested before mainnet;
+  - a swap route plus pump's ~40 accounts is close to the per-transaction account limit.
+
+  Each depositor making their own small swap has none of these problems, and the launch
+  stays one fair buy at one price.
+- **Program (stage 1):**
+  - **Pool token:** a `PoolQuote` PDA (`["pool_quote", escrow]`) records the token. No
+    account means a SOL pool, so existing escrows are untouched. `create_token_escrow` (the
+    operator pays all rents) also creates the vault's token account.
+  - **Moving the token:** `deposit_token`, `refund_token` and `claim_token` move the token
+    and share the caps, receipts, ordering and holder-rewards vote with the SOL path.
+    `deposit_token` requires that the vault received exactly the amount sent.
+  - **Refunds:** `refund_token` recreates a closed token account at the caller's cost, so a
+    depositor closing it can't block their refund.
+  - **Launch:**
+    - passes pump the quote accounts (plus pump's quote-control PDA when the token isn't on
+      Global's whitelist);
+    - takes the 1% fee in the token to the treasury's token account;
+    - buys with the whole pool after the fee;
+    - borrows the SOL for rents from whoever triggers it and returns the unused part in the
+      same instruction.
+
+    The same post-checks apply, measured in the token.
+  - **Units never mix:** the SOL `deposit`, `refund`, `claim` and `distribute_creator_fees`
+    take the `PoolQuote` PDA and refuse token pools (`TokenPool`); the token instructions
+    can't find a `PoolQuote` on SOL pools.
+- **Known limits:**
+  - a token-paired coin's creator fees arrive in the token and have no distribution
+    instruction yet; they stay in the escrow until one is added;
+  - an issuer that can pause or claw back its token (xStocks carry pausable and
+    permanent-delegate extensions; USDC can freeze) could block a token pool's refunds or
+    deposits. SOL pools have no such dependency, and the UI must say so on token pools.
+- **Next stages:**
+  - (2) the website runs USDC pools on devnet (Circle's devnet USDC is pump's devnet
+    whitelisted quote);
+  - (3) "pay with SOL" via Jupiter on mainnet: the wallet swaps and deposits in one
+    transaction.
 - **Decided by:** owner ("start devnet", "why can't it happen without my wallets") + Claude.

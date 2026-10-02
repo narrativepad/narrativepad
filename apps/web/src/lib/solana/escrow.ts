@@ -21,11 +21,16 @@ const IX = {
   claim: [62, 198, 214, 193, 213, 159, 108, 210],
   refund: [2, 96, 183, 251, 63, 208, 46, 46],
   launch: [153, 241, 93, 225, 22, 69, 74, 61],
+  createTokenEscrow: [2, 244, 224, 50, 222, 248, 182, 62],
+  depositToken: [11, 156, 96, 218, 39, 163, 180, 19],
+  refundToken: [198, 194, 93, 209, 12, 211, 46, 174],
+  claimToken: [116, 206, 27, 191, 166, 19, 0, 73],
 };
 const ACCOUNT = {
   escrow: [31, 213, 123, 187, 186, 22, 218, 155],
   receipt: [39, 154, 73, 106, 80, 102, 145, 153],
   holderVote: [219, 96, 222, 206, 34, 240, 57, 113],
+  poolQuote: [216, 246, 97, 88, 84, 90, 118, 97],
 };
 const EVENT = {
   Deposited: [111, 141, 26, 45, 161, 35, 100, 57],
@@ -53,6 +58,11 @@ export const mintPda = (escrow: PublicKey, nonce: bigint) => pda([enc.encode("mi
 export const holderVotePda = (escrow: PublicKey) => pda([enc.encode("holder_vote"), escrow.toBytes()], PROGRAM_ID);
 /** pump's creator for a holder-rewards coin. */
 export const holderRewardsPda = (mint: PublicKey) => pda([enc.encode("holder-rewards"), mint.toBytes()], PUMP_PROGRAM_ID);
+/** A token pool's token (D-023); no account = SOL pool. Every SOL instruction passes it so the
+ *  program can refuse token pools. */
+export const poolQuotePda = (escrow: PublicKey) => pda([enc.encode("pool_quote"), escrow.toBytes()], PROGRAM_ID);
+/** pump's list of quote mints admitted outside Global's whitelist. */
+export const quoteControlPda = () => pda([enc.encode("quote-control")], PUMP_PROGRAM_ID);
 export const ata = (owner: PublicKey, mint: PublicKey, tokenProgram: PublicKey) =>
   pda([owner.toBytes(), tokenProgram.toBytes(), mint.toBytes()], ASSOCIATED_TOKEN_PROGRAM_ID);
 
@@ -162,6 +172,140 @@ export interface CreateEscrowArgs {
   trancheInterval: bigint;
 }
 
+function writeCreateArgs(wr: Writer, a: CreateEscrowArgs) {
+  return wr
+    .bytes(a.narrativeId16)
+    .str(a.name)
+    .str(a.symbol)
+    .str(a.uri)
+    .bytes(a.detailsHash)
+    .bytes(a.lockHash)
+    .pubkey(a.proposer)
+    .u64(a.perWalletMax)
+    .u64(a.poolCap)
+    .u64(a.poolMin)
+    .u64(a.minDeposit)
+    .i64(a.depositStart)
+    .i64(a.depositEnd)
+    .i64(a.launchAfter)
+    .i64(a.launchDeadline)
+    .u8(a.trancheCount)
+    .i64(a.trancheInterval);
+}
+
+/** A pool token (D-023): the coin's pump quote mint and its token program. */
+export interface PoolToken {
+  mint: PublicKey;
+  tokenProgram: PublicKey;
+  /** pump admits the mint through quote-control (stocks, most coins) rather than Global's whitelist (USDC). */
+  viaQuoteControl: boolean;
+}
+
+/** A token pool: amounts in `token.mint` base units. The operator pays every rent. */
+export function createTokenEscrowIx(operator: PublicKey, a: CreateEscrowArgs, token: PoolToken) {
+  const escrow = escrowPda(a.narrativeId16);
+  const vault = vaultPda(escrow);
+  return ix(
+    [
+      { pubkey: operator, isSigner: true, isWritable: true },
+      r(configPda()),
+      w(escrow),
+      w(vault),
+      r(SystemProgram.programId),
+      w(holderVotePda(escrow)),
+      w(poolQuotePda(escrow)),
+      r(token.mint),
+      w(ata(vault, token.mint, token.tokenProgram)),
+      r(token.tokenProgram),
+      r(ASSOCIATED_TOKEN_PROGRAM_ID),
+    ],
+    writeCreateArgs(new Writer().bytes(IX.createTokenEscrow), a).bool(token.viaQuoteControl).done(),
+  );
+}
+
+/** A deposit into a token pool from the depositor's associated token account; carries the vote. */
+export function depositTokenIx(depositor: PublicKey, escrow: PublicKey, token: Pick<PoolToken, "mint" | "tokenProgram">, amount: bigint, holderRewards: boolean) {
+  const vault = vaultPda(escrow);
+  return ix(
+    [
+      { pubkey: depositor, isSigner: true, isWritable: true },
+      w(escrow),
+      r(vault),
+      w(receiptPda(escrow, depositor)),
+      r(SystemProgram.programId),
+      w(holderVotePda(escrow)),
+      r(poolQuotePda(escrow)),
+      r(token.mint),
+      w(ata(depositor, token.mint, token.tokenProgram)),
+      w(ata(vault, token.mint, token.tokenProgram)),
+      r(token.tokenProgram),
+    ],
+    new Writer().bytes(IX.depositToken).u64(amount).bool(holderRewards).done(),
+  );
+}
+
+/** Token-pool refund: 100% back to `wallet`'s token account (recreated at `caller`'s cost if closed). */
+export function refundTokenIx(caller: PublicKey, escrow: PublicKey, wallet: PublicKey, token: Pick<PoolToken, "mint" | "tokenProgram">) {
+  const vault = vaultPda(escrow);
+  return ix(
+    [
+      { pubkey: caller, isSigner: true, isWritable: true },
+      w(escrow),
+      r(vault),
+      w(receiptPda(escrow, wallet)),
+      w(wallet),
+      r(poolQuotePda(escrow)),
+      r(token.mint),
+      w(ata(vault, token.mint, token.tokenProgram)),
+      w(ata(wallet, token.mint, token.tokenProgram)),
+      r(token.tokenProgram),
+      r(ASSOCIATED_TOKEN_PROGRAM_ID),
+      r(SystemProgram.programId),
+    ],
+    new Writer().bytes(IX.refundToken).done(),
+  );
+}
+
+/** Token-pool claim: vested coin tokens plus the wallet's share of unspent pool tokens. */
+export function claimTokenIx(caller: PublicKey, escrow: PublicKey, wallet: PublicKey, mint: PublicKey, token: Pick<PoolToken, "mint" | "tokenProgram">) {
+  const vault = vaultPda(escrow);
+  return ix(
+    [
+      { pubkey: caller, isSigner: true, isWritable: true },
+      w(escrow),
+      r(vault),
+      w(receiptPda(escrow, wallet)),
+      r(wallet),
+      r(mint),
+      w(ata(vault, mint, TOKEN_2022_PROGRAM_ID)),
+      w(ata(wallet, mint, TOKEN_2022_PROGRAM_ID)),
+      r(TOKEN_2022_PROGRAM_ID),
+      w(poolQuotePda(escrow)),
+      r(token.mint),
+      w(ata(vault, token.mint, token.tokenProgram)),
+      w(ata(wallet, token.mint, token.tokenProgram)),
+      r(token.tokenProgram),
+      r(ASSOCIATED_TOKEN_PROGRAM_ID),
+      r(SystemProgram.programId),
+    ],
+    new Writer().bytes(IX.claimToken).done(),
+  );
+}
+
+export interface PoolQuoteAccount {
+  mint: PublicKey;
+  tokenProgram: PublicKey;
+  decimals: number;
+  viaQuoteControl: boolean;
+  quoteLeftover: bigint;
+}
+
+export function decodePoolQuote(data: Uint8Array): PoolQuoteAccount {
+  if (!startsWith(data, ACCOUNT.poolQuote)) throw new Error("not a PoolQuote account");
+  const d = new Reader(data).skip(8 + 32);
+  return { mint: d.pubkey(), tokenProgram: d.pubkey(), decimals: d.u8(), viaQuoteControl: d.bool(), quoteLeftover: d.u64() };
+}
+
 export function createEscrowIx(operator: PublicKey, a: CreateEscrowArgs) {
   const escrow = escrowPda(a.narrativeId16);
   const data = new Writer()
@@ -207,6 +351,7 @@ export function depositIx(depositor: PublicKey, escrow: PublicKey, amount: bigin
       w(receiptPda(escrow, depositor)),
       r(SystemProgram.programId),
       w(holderVotePda(escrow)),
+      r(poolQuotePda(escrow)),
     ],
     new Writer().bytes(IX.deposit).u64(amount).bool(holderRewards).done(),
   );
@@ -228,6 +373,7 @@ export function claimIx(caller: PublicKey, escrow: PublicKey, wallet: PublicKey,
       r(TOKEN_2022_PROGRAM_ID),
       r(ASSOCIATED_TOKEN_PROGRAM_ID),
       r(SystemProgram.programId),
+      r(poolQuotePda(escrow)),
     ],
     new Writer().bytes(IX.claim).done(),
   );
@@ -236,7 +382,7 @@ export function claimIx(caller: PublicKey, escrow: PublicKey, wallet: PublicKey,
 /** Permissionless; the full deposit goes back to `wallet` and the receipt closes to it. */
 export function refundIx(escrow: PublicKey, wallet: PublicKey) {
   return ix(
-    [w(escrow), w(vaultPda(escrow)), w(receiptPda(escrow, wallet)), w(wallet), r(SystemProgram.programId)],
+    [w(escrow), w(vaultPda(escrow)), w(receiptPda(escrow, wallet)), w(wallet), r(SystemProgram.programId), r(poolQuotePda(escrow))],
     new Writer().bytes(IX.refund).done(),
   );
 }
@@ -272,11 +418,15 @@ export function launchIx(o: {
   fees: PumpFees;
   createPayer?: "vault" | "cranker";
   holderRewards?: boolean;
+  /** A token pool's token (D-023); SOL pools pass nothing. */
+  token?: PoolToken;
 }) {
   const vault = vaultPda(o.escrow);
   const mint = mintPda(o.escrow, o.nonce);
   const t22 = TOKEN_2022_PROGRAM_ID;
-  const wsolAta = (owner: PublicKey) => ata(owner, WSOL_MINT, SPL_TOKEN_PROGRAM_ID);
+  const quoteMint = o.token?.mint ?? WSOL_MINT;
+  const quoteProgram = o.token?.tokenProgram ?? SPL_TOKEN_PROGRAM_ID;
+  const wsolAta = (owner: PublicKey) => ata(owner, quoteMint, quoteProgram);
   const bondingCurve = pda([enc.encode("bonding-curve"), mint.toBytes()], PUMP_PROGRAM_ID);
   const solVault = pda([enc.encode("sol-vault")], MAYHEM_PROGRAM_ID);
   const creator = o.holderRewards ? holderRewardsPda(mint) : vault;
@@ -293,8 +443,8 @@ export function launchIx(o: {
     w(pda([enc.encode("mayhem-state"), mint.toBytes()], MAYHEM_PROGRAM_ID)),
     w(ata(solVault, mint, t22)),
     r(pda([enc.encode("__event_authority")], PUMP_PROGRAM_ID)),
-    r(WSOL_MINT),
-    r(SPL_TOKEN_PROGRAM_ID),
+    r(quoteMint),
+    r(quoteProgram),
     w(o.fees.feeRecipient),
     w(wsolAta(o.fees.feeRecipient)),
     w(o.fees.buybackRecipient),
@@ -323,7 +473,10 @@ export function launchIx(o: {
     r(ASSOCIATED_TOKEN_PROGRAM_ID),
     r(SystemProgram.programId),
     w(holderVotePda(o.escrow)),
+    w(poolQuotePda(o.escrow)),
     ...remaining,
+    // Token pools: the treasury's account for the fee, then pump's quote-control list if needed.
+    ...(o.token ? [w(wsolAta(o.treasury)), ...(o.token.viaQuoteControl ? [r(quoteControlPda())] : [])] : []),
   ];
   return { ix: ix(keys, new Writer().bytes(IX.launch).u64(o.nonce).done()), mint };
 }
