@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { Icon, ProgressBar, TeamBadge, Who } from "@/components/bits";
 import { Countdown } from "@/components/Countdown";
 import { useMine } from "@/lib/client/useMine";
@@ -78,12 +79,12 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
         <div>
           <div className="flex items-baseline justify-between">
             <span className="num text-[2.2rem] font-semibold leading-none tracking-[-0.03em]">
-              {formatSol(total)} <span className="text-base font-normal text-dim">SOL</span>
+              <AnimatedNumber value={Number(total) / 1e9} format="sol" /> <span className="text-base font-normal text-dim">SOL</span>
             </span>
             <span className="num text-sm text-muted">{fillPct}% of {formatSol(cap)}</span>
           </div>
           <div className="mt-3">
-            <ProgressBar value={total} max={cap} marker={min} />
+            <ProgressBar value={total} max={cap} marker={min} live={pooling} />
           </div>
           <div className="mt-2 flex justify-between text-[0.75rem] text-dim">
             <span className="flex items-center gap-1">

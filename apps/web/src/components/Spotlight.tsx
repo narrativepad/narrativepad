@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { formatSol } from "@/lib/math";
 import type { NarrativeCard } from "@/lib/views";
+import { AnimatedNumber } from "./AnimatedNumber";
 import { Coin, coinTint, Icon, ProgressBar, STAGE } from "./bits";
 import { Countdown } from "./Countdown";
 
@@ -52,13 +53,14 @@ export function Spotlight({ n }: { n: NarrativeCard }) {
             </div>
             <div className="text-right">
               <div className="num text-[1.15rem] font-semibold">
-                {formatSol(total)} <span className="text-[0.8rem] font-normal text-dim">/ {formatSol(BigInt(e.poolCap))} SOL</span>
+                <AnimatedNumber value={Number(total) / 1e9} format="sol" />{" "}
+                <span className="text-[0.8rem] font-normal text-dim">/ {formatSol(BigInt(e.poolCap))} SOL</span>
               </div>
               <div className="text-[0.75rem] text-dim">{e.depositorCount === 0 ? "nobody in yet" : `${e.depositorCount} in the pool`}</div>
             </div>
           </div>
           <div className="mt-4">
-            <ProgressBar value={total} max={BigInt(e.poolCap)} marker={BigInt(e.poolMin)} tone={launching ? "warn" : "accent"} />
+            <ProgressBar value={total} max={BigInt(e.poolCap)} marker={BigInt(e.poolMin)} tone={launching ? "warn" : "accent"} live={!launching} />
           </div>
           <span className="btn-accent mt-5 h-11 w-full">
             {launching ? "Watch the launch" : "Join the pool"} <Icon name="arrow" className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useSigned } from "@/lib/client/useSigned";
 
-export function ReportButton({ targetType, targetId }: { targetType: "narrative" | "submission"; targetId: string }) {
+export function ReportButton({ targetType, targetId }: { targetType: "narrative" | "submission" | "comment"; targetId: string }) {
   const { run, busy } = useSigned();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");

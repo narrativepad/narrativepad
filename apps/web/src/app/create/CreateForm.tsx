@@ -229,6 +229,8 @@ export function CreateForm() {
                 votes: 0,
                 escrow: null,
                 flow: null,
+                comments: 0,
+                trend: { votes: 0, comments: 0, deposits: 0, lamports: "0", score: 0 },
               }}
             />
           </div>

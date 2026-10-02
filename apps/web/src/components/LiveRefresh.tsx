@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+const QUIET = new Set(["hello", "presence", "comment"]);
+
 /** Subscribes to server-sent events and re-renders the page's server data when something changes. */
 export function LiveRefresh({ narrativeId }: { narrativeId?: string }) {
   const router = useRouter();
@@ -11,7 +13,8 @@ export function LiveRefresh({ narrativeId }: { narrativeId?: string }) {
     const es = new EventSource(narrativeId ? `/api/stream?n=${narrativeId}` : "/api/stream");
     es.onmessage = (e) => {
       try {
-        if (JSON.parse(e.data).kind === "hello") return;
+        // Chat updates itself live (ChatProvider); only refetch the page for everything else.
+        if (QUIET.has(JSON.parse(e.data).kind)) return;
       } catch {}
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => router.refresh(), 350);

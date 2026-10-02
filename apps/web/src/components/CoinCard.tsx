@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { formatSol, formatTokens, launchBreakdown, PUMP } from "@/lib/math";
 import type { NarrativeCard } from "@/lib/views";
+import { AnimatedNumber } from "./AnimatedNumber";
 import { Coin, coinTint, Icon, ProgressBar, Sparkline, StageBadge, STAGE } from "./bits";
 import { Countdown } from "./Countdown";
+import { StarButton } from "./StarButton";
 
 function Timer({ to, done, tone }: { to: string; done: string; tone: string }) {
   return (
@@ -14,9 +16,10 @@ function Timer({ to, done, tone }: { to: string; done: string; tone: string }) {
 }
 
 /** Image-first card for one narrative. Without `href` it renders as a static preview. */
-export function CoinCard({ n, href }: { n: NarrativeCard; href?: string }) {
+export function CoinCard({ n, href, hot = false, showTrend = false }: { n: NarrativeCard; href?: string; hot?: boolean; showTrend?: boolean }) {
   const e = n.escrow;
   const total = BigInt(e?.totalDeposited ?? "0");
+  const t = n.trend;
   const body = (
     <>
       <div className="relative h-24 overflow-hidden">
@@ -31,9 +34,19 @@ export function CoinCard({ n, href }: { n: NarrativeCard; href?: string }) {
           <div className="absolute inset-0 opacity-60" style={{ background: coinTint(n.ticker) }} />
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#0e0f12]" />
-        <div className="absolute right-3 top-3">
+        <div className="absolute right-3 top-3 flex items-center gap-1.5">
+          {hot && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[0.7rem] font-semibold text-warn ring-1 ring-inset ring-warn/30 backdrop-blur-md">
+              <Icon name="flame" className="h-3 w-3" /> Hot
+            </span>
+          )}
           <StageBadge stage={n.stage} />
         </div>
+        {href && (
+          <div className="absolute left-3 top-3">
+            <StarButton id={n.id} />
+          </div>
+        )}
       </div>
 
       <div className="relative -mt-11 flex flex-1 flex-col px-4 pb-4">
@@ -46,11 +59,29 @@ export function CoinCard({ n, href }: { n: NarrativeCard; href?: string }) {
         </div>
         <p className="mt-1 line-clamp-2 min-h-[2.6em] text-[0.84rem] leading-snug text-muted">{n.pitch}</p>
 
+        {showTrend && (
+          <p className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.75rem] text-dim">
+            <Icon name="trend" className="h-3.5 w-3.5 text-accent" />
+            <span>last 15 min:</span>
+            {t.votes > 0 && <span className="text-violet">+{t.votes} votes</span>}
+            {t.deposits > 0 && <span className="text-accent">+{formatSol(BigInt(t.lamports))} SOL</span>}
+            {t.comments > 0 && <span className="text-info">+{t.comments} msgs</span>}
+          </p>
+        )}
+
         <div className="mt-4 border-t border-white/[0.06] pt-3.5">
           {n.stage === "voting" && (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-[0.82rem] text-muted">
-                <span className="num font-semibold text-ink">{n.votes}</span> vote{n.votes === 1 ? "" : "s"} so far
+              <span className="flex items-center gap-3 text-[0.82rem] text-muted">
+                <span>
+                  <AnimatedNumber value={n.votes} className="font-semibold text-ink" /> vote{n.votes === 1 ? "" : "s"}
+                </span>
+                {n.comments > 0 && (
+                  <span className="flex items-center gap-1 text-dim">
+                    <Icon name="chat" className="h-3.5 w-3.5" />
+                    {n.comments}
+                  </span>
+                )}
               </span>
               <Timer to={n.voteEndsAt} done="tallying…" tone={STAGE.voting.text} />
             </div>
@@ -60,7 +91,8 @@ export function CoinCard({ n, href }: { n: NarrativeCard; href?: string }) {
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-3">
                 <span className="num text-[1.05rem] font-semibold">
-                  {formatSol(total)} <span className="text-[0.78rem] font-normal text-dim">/ {formatSol(BigInt(e.poolCap))} SOL</span>
+                  <AnimatedNumber value={Number(total) / 1e9} format="sol" />{" "}
+                  <span className="text-[0.78rem] font-normal text-dim">/ {formatSol(BigInt(e.poolCap))} SOL</span>
                 </span>
                 <Timer
                   to={n.stage === "pooling" ? e.depositEnd : e.launchAfter}
@@ -68,7 +100,7 @@ export function CoinCard({ n, href }: { n: NarrativeCard; href?: string }) {
                   tone={STAGE[n.stage].text}
                 />
               </div>
-              <ProgressBar value={total} max={BigInt(e.poolCap)} marker={BigInt(e.poolMin)} tone={n.stage === "pooling" ? "accent" : "warn"} />
+              <ProgressBar value={total} max={BigInt(e.poolCap)} marker={BigInt(e.poolMin)} tone={n.stage === "pooling" ? "accent" : "warn"} live={n.stage === "pooling"} />
               <div className="flex items-center justify-between text-[0.75rem] text-dim">
                 <span>{e.depositorCount === 0 ? "Nobody in yet" : `${e.depositorCount} in the pool`}</span>
                 <span>

@@ -152,3 +152,57 @@ Format: date — decision — why — alternatives considered — decided by.
 - **Why:** Owner feedback after D-013: "still very poor ui, no premium feeling at all."
 - **Supersedes:** D-013's board columns and the ≥1920px home rail.
 - **Decided by:** owner (request) + Claude (design).
+
+### D-015 · 2026-10-02 · Feature pack: chat, trending, alerts, portfolio, palette
+- **Decision:** the owner picked all eight proposed features. Choices made while building them:
+  - **Chat:** a new `comments` table and a signed `comment` action, built like votes (nonce,
+    ed25519, rebuilt message). Single line, up to 500 characters, same blocklist as pitches,
+    6 per wallet per minute, and hidden after 3 reports (`report` accepts `comment`).
+    Badges: creator, team, and "in pool" (has unrefunded SOL in the pool).
+  - **Trending:** a momentum score over the last 15 minutes: votes + 0.5 × messages +
+    3 × deposits + 2 × SOL deposited. The top three get a "Hot" badge.
+  - **Live alerts:** the SSE events for deposits, new narratives and launches now carry the
+    public wallet and amount, and other people's actions show as pop-ups. Muting is stored
+    per browser.
+  - **Reminders and watchlist:** kept in the browser's localStorage, not the DB. Reminders fire
+    only while a narrativepad tab is open, and the button says so. There's no push server,
+    so nothing personal is stored server-side.
+  - **Portfolio:** `/api/portfolio?wallet=` returns public per-wallet positions, using the
+    same position maths as the coin page. "Claim all" signs one message per coin.
+  - **Bonding-curve chart:** drawn from the pump.fun constants in `math.ts`. It shows the
+    pool's buy and the next buyer's price; it is not market data.
+  - **Loading skeletons:** only on the home page (in the `(home)` route group) and the
+    leaderboard. A loading boundary above a page that calls `notFound()` makes Next stream a
+    200, which would break real 404s for coin and profile pages.
+  - Overlays (palette, lightbox) render through a portal, and entry animations use fill
+    `backwards`, so a finished animation or a header backdrop-filter can't trap
+    position:fixed content.
+- **Verified:** `sim-e2e.ts` 19/19, `ui-e2e.mjs` 61/61 with no console errors, and `smoke.mjs`
+  passing with real 404s.
+- **Decided by:** owner (feature list) + Claude (implementation).
+
+### D-016 · 2026-10-02 · Live chat per narrative for coordination
+- **Decision:** the coin chat becomes a live room.
+  - **Limits:** text only, up to 300 words (2,000 characters) and 30 lines; line breaks
+    allowed. No images, uploads, embeds or link previews, and links stay plain text.
+    Control characters are rejected. The client normalises the text (CRLF, trailing spaces,
+    blank-line runs) before signing, and the server rejects anything not already normalised,
+    so what's stored is exactly what was signed.
+  - **Live delivery:** one `ChatProvider` per coin page listens on
+    `/api/stream?n=<id>&presence=1` and fetches only new messages from
+    `GET /api/narratives/[id]/comments?after=`. On reconnect it catches up after the stream's
+    "hello". The page no longer reloads on chat events.
+  - **Presence:** connections opened with `presence=1` are counted in memory per narrative and
+    the count is pushed to everyone in that room ("N here now"). This is accurate on one
+    instance; it needs a shared store if the service ever scales out.
+  - **Dock:** a floating "Live chat" launcher on every coin page shows the headcount and an
+    unread badge. It opens as a panel on desktop and a full-screen sheet on phones. The
+    Live chat tab and the dock share one state.
+  - Moderation is unchanged (blocklist, 6 messages per wallet per minute, hidden after 3
+    reports). Every message is still a signed action.
+- **Known trade-off:** guests sign silently, but a connected wallet is asked to sign every
+  message. A per-session chat key, authorised once by the wallet, would remove that and is
+  a possible follow-up.
+- **Verified:** `sim-e2e.ts` 19/19, `ui-e2e.mjs` 62/62 (a second visitor's message arrives
+  live, headcount, unread badge, dock), and `smoke.mjs` passes.
+- **Decided by:** owner (request: "live chat … max 200–300 words, no pictures") + Claude (design).

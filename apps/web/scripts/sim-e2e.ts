@@ -130,6 +130,36 @@ async function main() {
   assert.equal((await once.replay()).status, 401);
   ok("nonce replay → 401");
 
+  // ---- chat ----------------------------------------------------------------------------------
+  const say = (w: Wallet, body: string) => w.signed(`/api/narratives/${id}/comments`, "comment", { narrativeId: id, body });
+  const hello = await say(bob, "Moon Kitty all the way.");
+  assert.equal(hello.status, 200, JSON.stringify(hello.data));
+  const plan = await say(carol, "Plan for the pool:\n1. back Moon Kitty\n2. join early, it's the same price anyway");
+  assert.equal(plan.status, 200, "multi-line messages are allowed");
+  assert.equal((await say(carol, Array.from({ length: 300 }, () => "word").join(" "))).status, 200, "300 words is fine");
+  assert.equal((await say(carol, Array.from({ length: 301 }, () => "word").join(" "))).status, 400, "301 words is not");
+  assert.equal((await say(carol, "x".repeat(2001))).status, 400);
+  assert.equal((await say(carol, "   ")).status, 400);
+  assert.equal((await say(carol, "this is nsfw content")).status, 400, "blocklist applies to chat");
+  assert.equal((await say(carol, "tab\tcharacter")).status, 400, "text only");
+  assert.equal((await say(carol, "too\n\n\n\nmany blank lines")).status, 400, "must be normalised before signing");
+  const since = await (await fetch(`${BASE}/api/narratives/${id}/comments?after=${encodeURIComponent(new Date(Date.now() - 60_000).toISOString())}`)).json();
+  assert.equal(since.comments.length, 3, "catch-up endpoint returns new messages");
+  const tamperedChat = await dave.signed(`/api/narratives/${id}/comments`, "comment", { narrativeId: id, body: "nice" }, (p) => ({ ...p, body: "rug" }));
+  assert.equal(tamperedChat.status, 401);
+  for (const w of [alice, carol, dave]) {
+    const r = await w.signed("/api/report", "report", { targetType: "comment", targetId: hello.data.id, reason: "spam test" });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+  }
+  n = await detail(slug);
+  assert.equal(n.comments.length, 2, "reported message hidden after 3 reports");
+  assert.ok(!n.comments.some((c: any) => c.id === hello.data.id));
+  assert.equal((await say(alice, "Second message, still here.")).status, 200);
+  n = await detail(slug);
+  assert.equal(n.comments.length, 3);
+  assert.equal(n.comments[2].isCreator, true);
+  ok("chat: signed text, up to 300 words and multi-line; length, blocklist, control-char and tamper checks; 3 reports hide a message");
+
   // ---- lock ----------------------------------------------------------------------------------
   n = await waitFor(slug, (x) => x.lock && x.escrow, "lock + escrow");
   assert.equal(n.lock.name, "Moon Kitty");
@@ -203,6 +233,15 @@ async function main() {
   assert.equal(p3.claimed, p0.entitlement);
   assert.equal((await claim(alice)).status, 409);
   ok("all 3 tranches claimed, exactly the entitlement, never more");
+
+  const folio = await (await fetch(`${BASE}/api/portfolio?wallet=${bob.address}`)).json();
+  const mine = folio.items.find((x: any) => x.narrativeId === id);
+  assert.ok(mine, "portfolio lists the pool");
+  assert.equal(mine.stage, "live");
+  assert.equal(mine.deposited, (2n * SOL).toString());
+  assert.ok(BigInt(mine.claimable) > 0n, "bob has unclaimed tokens");
+  assert.equal((await (await fetch(`${BASE}/api/portfolio?wallet=nope`)).json()).error, "Invalid wallet");
+  ok("portfolio: position, stage and claimable amount match");
 
   // ---- refund path ---------------------------------------------------------------------------
   const c2Res = await bob.signed("/api/narratives", "create", { pitch: "A narrative nobody funds enough, to test refunds.", name: "Thin Pool", ticker: "THIN" });

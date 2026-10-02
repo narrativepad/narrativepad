@@ -2,17 +2,42 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Activity } from "@/components/Activity";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { Coin, coinTint, Icon, StageBadge, STAGE, TeamBadge, Who } from "@/components/bits";
 import { Countdown } from "@/components/Countdown";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { RemindButton } from "@/components/Reminders";
+import { ShareMenu } from "@/components/ShareMenu";
+import { StarButton } from "@/components/StarButton";
 import { formatSol, formatTokens, launchBreakdown, PUMP } from "@/lib/math";
 import type { Stage } from "@/lib/phase";
 import { narrativeBySlug, type NarrativeDetail } from "@/lib/views";
 import { Ballots } from "./Ballots";
+import { ChatCount, ChatDock, ChatProvider, ChatRoom } from "./Chat";
+import { CurveChart, CurveMeta } from "./CurveChart";
+import { Holders } from "./Holders";
 import { LockPanel } from "./LockPanel";
-import { PoolChart } from "./PoolChart";
+import { PoolFlow, PoolFlowMeta } from "./PoolChart";
 import { PoolPanel } from "./PoolPanel";
 import { ReportButton } from "./ReportButton";
+import { SectionTabs, SwitchPanel, type TabSpec } from "./Tabs";
+
+/** A ready-made post for sharing the coin on X, worded for its stage. */
+function shareText(n: NarrativeDetail) {
+  const coin = n.ticker ? `${n.title} ($${n.ticker})` : n.title;
+  switch (n.stage) {
+    case "voting":
+      return `Help name this coin on narrativepad: "${n.pitch.slice(0, 140)}" Vote on the name, ticker and image.`;
+    case "pooling":
+      return `The ${coin} pool is open on narrativepad. Same price for everyone, 100% refundable if it doesn't launch.`;
+    case "launching":
+      return `${coin} launches in minutes. Built and bought by the crowd on narrativepad.`;
+    case "live":
+      return `${coin} was built and bought together by the crowd on narrativepad.`;
+    default:
+      return `${coin} on narrativepad`;
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -75,9 +100,15 @@ function HeroStats({ n }: { n: NarrativeDetail }) {
   if (n.stage === "voting" || n.stage === "cancelled" || !e) {
     return (
       <>
-        <Stat icon="vote" label="Votes">{n.totalVotes}</Stat>
-        <Stat icon="users" label="Voters">{n.voters}</Stat>
-        <Stat icon="spark" label="Entries">{n.entryCount}</Stat>
+        <Stat icon="vote" label="Votes">
+          <AnimatedNumber value={n.totalVotes} />
+        </Stat>
+        <Stat icon="users" label="Voters">
+          <AnimatedNumber value={n.voters} />
+        </Stat>
+        <Stat icon="spark" label="Entries">
+          <AnimatedNumber value={n.entryCount} />
+        </Stat>
         <Stat icon="clock" label={n.stage === "voting" ? "Voting ends" : "Status"} tone={n.stage === "voting" ? "text-violet" : "text-dim"}>
           {n.stage === "voting" ? <Countdown to={n.voteEndsAt} done="tallying…" /> : "Cancelled"}
         </Stat>
@@ -90,7 +121,7 @@ function HeroStats({ n }: { n: NarrativeDetail }) {
     return (
       <>
         <Stat icon="coins" label="Pool bought" sub={`${Number((bought * 1000n) / PUMP.totalSupply) / 10}% of supply`}>
-          {formatTokens(bought)}
+          <AnimatedNumber value={Number(bought / 1_000_000n)} format="tokens" />
         </Stat>
         <Stat icon="spark" label="Pool" sub={`fee ${formatSol(BigInt(e.platformFee), 3)} SOL`}>
           {formatSol(total)} SOL
@@ -106,9 +137,11 @@ function HeroStats({ n }: { n: NarrativeDetail }) {
   return (
     <>
       <Stat icon="coins" label="Pooled" tone="text-accent" sub={`of ${formatSol(BigInt(e.poolCap))} SOL cap`}>
-        {formatSol(total)} SOL
+        <AnimatedNumber value={Number(total) / 1e9} format="sol" /> SOL
       </Stat>
-      <Stat icon="users" label="In the pool">{e.depositorCount}</Stat>
+      <Stat icon="users" label="In the pool">
+        <AnimatedNumber value={e.depositorCount} />
+      </Stat>
       {n.stage === "refunding" ? (
         <Stat icon="rocket" label="Needed to launch" sub="pool minimum">
           {formatSol(BigInt(e.poolMin))} SOL
@@ -146,120 +179,156 @@ export default async function NarrativePage({ params }: { params: Promise<{ slug
   const version = `${n.stage}:${n.totalVotes}:${n.entryCount}:${n.escrow?.totalDeposited ?? 0}:${n.escrow?.tokensClaimed ?? 0}:${n.escrow?.totalRefunded ?? 0}:${n.deposits.length}`;
   const e = n.escrow;
   const s = STAGE[n.stage];
+  const remind =
+    n.stage === "voting"
+      ? { at: n.voteEndsAt, what: "vote" as const, lead: 60 }
+      : n.stage === "pooling" && e
+        ? { at: e.depositEnd, what: "pool" as const, lead: 60 }
+        : n.stage === "launching" && e
+          ? { at: e.launchAfter, what: "launch" as const, lead: 20 }
+          : null;
+
+  const sections: TabSpec[] = [
+    {
+      key: "ballots",
+      label: n.stage === "voting" ? "Ballots" : "Final ballots",
+      count: n.entryCount,
+      content: (
+        <div className="flex flex-col gap-3">
+          <p className="text-[0.8rem] text-dim">
+            {n.stage === "voting" ? "One vote per person per field · highest wins · ties go to the earliest entry" : "Locked and hashed when voting ended"}
+          </p>
+          <Ballots n={n} version={version} />
+        </div>
+      ),
+    },
+    { key: "chat", label: "Live chat", count: <ChatCount />, content: <ChatRoom variant="tab" /> },
+    { key: "holders", label: "Holders", count: n.holders.filter((h) => !h.refunded).length, content: <Holders n={n} /> },
+    { key: "activity", label: "Activity", content: <Activity items={n.activity} className="max-h-[34rem]" /> },
+  ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <LiveRefresh narrativeId={n.id} />
-      <Link href="/#explore" className="flex w-fit items-center gap-1.5 text-[0.85rem] text-muted transition-colors hover:text-ink">
-        <Icon name="arrow" className="h-3.5 w-3.5 rotate-180" /> All narratives
-      </Link>
+    <ChatProvider narrativeId={n.id} title={n.ticker ? `$${n.ticker}` : n.title} initial={n.comments}>
+      <div className="flex flex-col gap-4">
+        <LiveRefresh narrativeId={n.id} />
+        <Link href="/#explore" className="flex w-fit items-center gap-1.5 text-[0.85rem] text-muted transition-colors hover:text-ink">
+          <Icon name="arrow" className="h-3.5 w-3.5 rotate-180" /> All narratives
+        </Link>
 
-      <section className="panel relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[1.25rem]">
-          {n.image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={n.image} alt="" aria-hidden className="absolute -left-[10%] -top-1/2 h-[200%] w-[75%] object-cover opacity-35 blur-[90px] saturate-150" />
-          ) : (
-            <div className="absolute -left-24 -top-24 h-96 w-[40rem] rounded-full opacity-40 blur-3xl" style={{ background: coinTint(n.ticker) }} />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#0c0d10]/50 to-[#0c0d10]/90" />
-        </div>
-        <div className="relative grid gap-7 p-5 sm:p-7 xl:grid-cols-[minmax(0,1fr)_minmax(0,44rem)] xl:items-center 2xl:p-9">
-          <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center sm:gap-7">
-            <div className="w-fit rounded-[1.6rem] shadow-[0_30px_70px_-20px_rgb(0_0_0/0.95)]">
-              <Coin image={n.image} ticker={n.ticker} size={128} />
+        <section className="panel relative overflow-hidden">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[1.25rem]">
+            {n.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={n.image} alt="" aria-hidden className="absolute -left-[10%] -top-1/2 h-[200%] w-[75%] object-cover opacity-35 blur-[90px] saturate-150" />
+            ) : (
+              <div className="absolute -left-24 -top-24 h-96 w-[40rem] rounded-full opacity-40 blur-3xl" style={{ background: coinTint(n.ticker) }} />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#0c0d10]/50 to-[#0c0d10]/90" />
+          </div>
+          <div className="relative grid gap-7 p-5 sm:p-7 xl:grid-cols-[minmax(0,1fr)_minmax(0,44rem)] xl:items-center 2xl:p-9">
+            <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center sm:gap-7">
+              <div className="w-fit rounded-[1.6rem] shadow-[0_30px_70px_-20px_rgb(0_0_0/0.95)]">
+                <Coin image={n.image} ticker={n.ticker} size={128} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <StageBadge stage={n.stage} />
+                  <span className={`text-[0.85rem] ${s.text}`}>{STAGE_LINE[n.stage]}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h1 className="text-silver text-[2.4rem] font-semibold leading-[1] tracking-[-0.04em] sm:text-[3.2rem]">{n.title}</h1>
+                  {n.ticker && <span className="num text-[1.2rem] font-medium text-muted">${n.ticker}</span>}
+                </div>
+                <p className="mt-3 line-clamp-3 max-w-2xl break-words text-[1.02rem] leading-relaxed text-ink/85">{n.pitch}</p>
+                <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[0.8rem] text-dim">
+                  <span className="flex items-center gap-1.5">
+                    started by <Who address={n.creator} size={18} className="text-muted" /> {n.creatorIsTeam && <TeamBadge />}
+                  </span>
+                  {n.sourceUrl && (
+                    <a href={n.sourceUrl} target="_blank" rel="noopener noreferrer nofollow" className="flex max-w-[22rem] items-center gap-1.5 truncate text-muted hover:text-ink">
+                      <Icon name="link" className="h-3.5 w-3.5 shrink-0" />
+                      {n.sourceUrl.replace(/^https:\/\//, "")}
+                    </a>
+                  )}
+                  <ReportButton targetType="narrative" targetId={n.id} />
+                </div>
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <StarButton id={n.id} variant="pill" />
+                  {remind && <RemindButton narrativeId={n.id} slug={n.slug} title={n.title} deadline={remind.at} what={remind.what} leadSec={remind.lead} />}
+                  <ShareMenu path={`/n/${n.slug}`} text={shareText(n)} />
+                </div>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <StageBadge stage={n.stage} />
-                <span className={`text-[0.85rem] ${s.text}`}>{STAGE_LINE[n.stage]}</span>
-              </div>
-              <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h1 className="text-silver text-[2.4rem] font-semibold leading-[1] tracking-[-0.04em] sm:text-[3.2rem]">{n.title}</h1>
-                {n.ticker && <span className="num text-[1.2rem] font-medium text-muted">${n.ticker}</span>}
-              </div>
-              <p className="mt-3 line-clamp-3 max-w-2xl break-words text-[1.02rem] leading-relaxed text-ink/85">{n.pitch}</p>
-              <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[0.8rem] text-dim">
-                <span className="flex items-center gap-1.5">
-                  started by <Who address={n.creator} size={18} className="text-muted" /> {n.creatorIsTeam && <TeamBadge />}
-                </span>
-                {n.sourceUrl && (
-                  <a href={n.sourceUrl} target="_blank" rel="noopener noreferrer nofollow" className="flex max-w-[22rem] items-center gap-1.5 truncate text-muted hover:text-ink">
-                    <Icon name="link" className="h-3.5 w-3.5 shrink-0" />
-                    {n.sourceUrl.replace(/^https:\/\//, "")}
-                  </a>
-                )}
-                <ReportButton targetType="narrative" targetId={n.id} />
-              </div>
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.07] backdrop-blur-md sm:grid-cols-4">
+              <HeroStats n={n} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.07] backdrop-blur-md sm:grid-cols-4">
-            <HeroStats n={n} />
+          <div className="relative border-t border-white/[0.06] px-5 py-4 sm:px-7 2xl:px-9">
+            <Stepper stage={n.stage} />
           </div>
-        </div>
-        <div className="relative border-t border-white/[0.06] px-5 py-4 sm:px-7 2xl:px-9">
-          <Stepper stage={n.stage} />
-        </div>
-      </section>
-
-      {e?.launched && (
-        <section className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-accent/20 bg-gradient-to-r from-accent/[0.08] to-transparent px-5 py-3.5 text-sm">
-          <span className="flex items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-0.5 text-[0.7rem] font-semibold text-accent">
-            <Icon name="shield" className="h-3.5 w-3.5" /> Community pool buy
-          </span>
-          <span className="text-muted">
-            The opening buy was made for <span className="num font-medium text-ink">{e.depositorCount}</span>{" "}
-            {e.depositorCount === 1 ? "person" : "people"} at one price, together. Not an insider bundle.
-          </span>
         </section>
-      )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_27rem] lg:items-start 3xl:grid-cols-[minmax(0,1fr)_31rem]">
-        <div className="flex min-w-0 flex-col gap-4">
-          {e && n.flow.length > 0 && <PoolChart n={n} />}
-          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <h2 className="text-[1.35rem] font-semibold tracking-[-0.025em]">{n.stage === "voting" ? "Ballots" : "Final ballots"}</h2>
-            <span className="text-[0.8rem] text-dim">
-              {n.stage === "voting" ? "One vote per person per field · highest wins · ties go to the earliest entry" : "Locked and hashed when voting ended"}
+        {e?.launched && (
+          <section className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-accent/20 bg-gradient-to-r from-accent/[0.08] to-transparent px-5 py-3.5 text-sm">
+            <span className="flex items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-0.5 text-[0.7rem] font-semibold text-accent">
+              <Icon name="shield" className="h-3.5 w-3.5" /> Community pool buy
             </span>
-          </div>
-          <Ballots n={n} version={version} />
-          <Activity items={n.activity} className="max-h-[30rem]" />
-        </div>
+            <span className="text-muted">
+              The opening buy was made for <span className="num font-medium text-ink">{e.depositorCount}</span>{" "}
+              {e.depositorCount === 1 ? "person" : "people"} at one price, together. Not an insider bundle.
+            </span>
+          </section>
+        )}
 
-        {/* On phones the pool (the thing you act on) comes straight after the hero. */}
-        <div className={`flex min-w-0 flex-col gap-4 ${e ? "max-lg:order-first" : ""}`}>
-          {e ? (
-            <PoolPanel n={n} version={version} />
-          ) : (
-            <section className="panel">
-              <div className="panel-head">
-                <span>What happens next</span>
-              </div>
-              <ol className="space-y-5 p-5 text-[0.88rem] leading-relaxed text-muted">
-                {[
-                  ["lock", "Lock", "The winning name, ticker, image and links are frozen and hashed."],
-                  ["coins", "Pool", "A public pool opens. Everyone who joins gets the same price."],
-                  ["rocket", "Launch", "The coin is created and the whole pool buys in, in one transaction."],
-                  ["spark", "Release", "Tokens unlock to everyone in equal tranches. Pool too small? Everyone gets 100% back."],
-                ].map(([icon, t, d]) => (
-                  <li key={t} className="flex gap-3.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-inset ring-accent/20">
-                      <Icon name={icon as "lock"} className="h-4 w-4" />
-                    </span>
-                    <span>
-                      <span className="font-semibold text-ink">{t}</span>
-                      <br />
-                      {d}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          )}
-          {n.lock && <LockPanel n={n} />}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_27rem] lg:items-start 3xl:grid-cols-[minmax(0,1fr)_31rem]">
+          <div className="flex min-w-0 flex-col gap-6">
+            {e && (
+              <SwitchPanel
+                initial={n.flow.length > 0 ? "flow" : "curve"}
+                tabs={[
+                  { key: "flow", label: "Pool flow", meta: <PoolFlowMeta n={n} />, content: <PoolFlow n={n} /> },
+                  { key: "curve", label: "Bonding curve", meta: <CurveMeta n={n} />, content: <CurveChart n={n} /> },
+                ]}
+              />
+            )}
+            <SectionTabs tabs={sections} initial={n.stage === "voting" ? "ballots" : "chat"} />
+          </div>
+
+          {/* On phones the pool (the thing you act on) comes straight after the hero. */}
+          <div className={`flex min-w-0 flex-col gap-4 ${e ? "max-lg:order-first" : ""}`}>
+            {e ? (
+              <PoolPanel n={n} version={version} />
+            ) : (
+              <section className="panel">
+                <div className="panel-head">
+                  <span>What happens next</span>
+                </div>
+                <ol className="space-y-5 p-5 text-[0.88rem] leading-relaxed text-muted">
+                  {[
+                    ["lock", "Lock", "The winning name, ticker, image and links are frozen and hashed."],
+                    ["coins", "Pool", "A public pool opens. Everyone who joins gets the same price."],
+                    ["rocket", "Launch", "The coin is created and the whole pool buys in, in one transaction."],
+                    ["spark", "Release", "Tokens unlock to everyone in equal tranches. Pool too small? Everyone gets 100% back."],
+                  ].map(([icon, t, d]) => (
+                    <li key={t} className="flex gap-3.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-inset ring-accent/20">
+                        <Icon name={icon as "lock"} className="h-4 w-4" />
+                      </span>
+                      <span>
+                        <span className="font-semibold text-ink">{t}</span>
+                        <br />
+                        {d}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
+            {n.lock && <LockPanel n={n} />}
+          </div>
         </div>
       </div>
-    </div>
+      <ChatDock />
+    </ChatProvider>
   );
 }

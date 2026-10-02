@@ -8,7 +8,7 @@ import { config } from "./config";
 import { date, q, q1, transaction } from "./db";
 import { publish } from "./events";
 import { canonicalJson, fromHex, lockHash, merkleRoot, sha256Hex, uuidBytes } from "./math";
-import { FIELDS, REQUIRED_FIELDS, type Field } from "./messages";
+import { COMMENT_MAX_LINES, COMMENT_MAX_WORDS, countWords, FIELDS, normaliseComment, REQUIRED_FIELDS, type Field } from "./messages";
 import { HIDE_THRESHOLD, moderateText } from "./moderation";
 
 const MAX_SUBMISSIONS_PER_WALLET_PER_FIELD = 3;
@@ -99,7 +99,7 @@ export async function createNarrative(v: Verified<"create">): Promise<{ id: stri
       );
     }
   });
-  publish(id, "created");
+  publish(id, "created", { wallet: v.wallet });
   return { id, slug };
 }
 
@@ -146,9 +146,41 @@ export async function castVote(v: Verified<"vote">) {
   publish(narrativeId, "vote");
 }
 
+/** Community chat. Open in every stage; same signature, moderation and report rules as entries. */
+export async function addComment(v: Verified<"comment">): Promise<{ id: string }> {
+  const { narrativeId } = v.payload;
+  const body = v.payload.body.trim();
+  const n = await q1<any>(`SELECT id, hidden FROM narratives WHERE id = $1`, [narrativeId]);
+  if (!n || n.hidden) throw new HttpError(404, "Narrative not found");
+  // Plain text only: line breaks are fine, other control characters are not.
+  if (/[\u0000-\u0009\u000b-\u001f\u007f]/.test(body)) throw new HttpError(400, "Messages can only contain text");
+  if (body !== normaliseComment(body)) throw new HttpError(400, "Message has extra blank lines or spaces");
+  if (countWords(body) > COMMENT_MAX_WORDS) throw new HttpError(400, `Keep it under ${COMMENT_MAX_WORDS} words`);
+  if (body.split("\n").length > COMMENT_MAX_LINES) throw new HttpError(400, `Keep it under ${COMMENT_MAX_LINES} lines`);
+  checkText(body, "pitch");
+  const recent = await q1<{ c: string }>(
+    `SELECT COUNT(*)::text AS c FROM comments WHERE wallet = $1 AND created_at > now() - interval '1 minute'`,
+    [v.wallet],
+  );
+  if (Number(recent?.c ?? 0) >= 6) throw new HttpError(429, "You're posting too fast, wait a moment");
+  const id = randomUUID();
+  await q(`INSERT INTO comments (id, narrative_id, wallet, body, message, signature) VALUES ($1,$2,$3,$4,$5,$6)`, [
+    id,
+    narrativeId,
+    v.wallet,
+    body,
+    v.message,
+    v.signature,
+  ]);
+  publish(narrativeId, "comment", { wallet: v.wallet });
+  return { id };
+}
+
+const REPORT_TABLE = { narrative: "narratives", submission: "submissions", comment: "comments" } as const;
+
 export async function report(v: Verified<"report">) {
   const { targetType, targetId, reason } = v.payload;
-  const table = targetType === "narrative" ? "narratives" : "submissions";
+  const table = REPORT_TABLE[targetType];
   const inserted = await q1(
     `INSERT INTO reports (target_type, target_id, reporter_wallet, reason) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING target_id`,
     [targetType, targetId, v.wallet, reason],

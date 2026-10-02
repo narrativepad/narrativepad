@@ -97,6 +97,16 @@ async function narrative(creator: W, s: Spec, images: string[]) {
   await sub(crowd[6], "telegram", `https://t.me/${s.ticker.toLowerCase()}portal`);
   const d = await (await fetch(`${BASE}/api/n/${slug}`)).json();
   const id0 = (field: string, i = 0) => d.ballots[field].entries[i]?.id;
+  const chatter = [
+    `${s.name} is the one. The ticker writes itself.`,
+    "Source checks out, this has been all over my timeline today.",
+    `Voted. ${s.alt ? `${s.alt[0]} is fine too, but ` : ""}the first entry has better meme energy.`,
+    "Same price for everyone is the only reason I'm in. No more getting sniped.",
+    "Who made the image? Needs to be the official one.",
+  ];
+  for (const [i, line] of chatter.slice(0, 2 + (s.voters % 3)).entries()) {
+    await crowd[(i * 4 + s.art + 1) % crowd.length].post(`/api/narratives/${id}/comments`, "comment", { narrativeId: id, body: line });
+  }
   for (const [i, w] of pick(s.voters, s.art).entries()) {
     const v = (field: any, sid: string | undefined) => sid && w.post(`/api/narratives/${id}/vote`, "vote", { narrativeId: id, field, submissionId: sid });
     await v("name", id0("name", i % 4 === 0 && d.ballots.name.entries.length > 1 ? 1 : 0));

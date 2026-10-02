@@ -156,6 +156,19 @@ CREATE TABLE IF NOT EXISTS reports (
   PRIMARY KEY (target_type, target_id, reporter_wallet)
 );
 
+CREATE TABLE IF NOT EXISTS comments (
+  id TEXT PRIMARY KEY,
+  narrative_id TEXT NOT NULL REFERENCES narratives(id),
+  wallet TEXT NOT NULL,
+  body TEXT NOT NULL,
+  message TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  report_count INT NOT NULL DEFAULT 0,
+  hidden BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS comments_narrative_idx ON comments(narrative_id, created_at);
+
 CREATE TABLE IF NOT EXISTS nonces (
   nonce TEXT PRIMARY KEY,
   wallet TEXT NOT NULL,

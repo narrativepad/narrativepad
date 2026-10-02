@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
+import { LiveAlerts } from "@/components/LiveAlerts";
+import { ReminderRunner } from "@/components/Reminders";
 import { PreviewBanner } from "@/components/PreviewBanner";
 import { Providers } from "@/components/Providers";
 import { config, publicConfig } from "@/lib/config";
@@ -33,6 +35,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {children}
           </main>
           <Footer />
+          <LiveAlerts />
+          <ReminderRunner />
         </Providers>
       </body>
     </html>

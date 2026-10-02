@@ -28,7 +28,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const GRID_CARDS = '[role="tablist"] + div a.card[href^="/n/"]';
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ["clipboard-read", "clipboard-write", "notifications"] });
 const page = await ctx.newPage();
 
 // Expected rejections the test triggers on purpose are whitelisted by URL + status.
@@ -158,7 +158,72 @@ await check("report a narrative", async () => {
   await page.click('button:has-text("Send")');
   await toast(/Reported/);
 });
-await check("live activity lists the votes", () => waitText("voted", 5000));
+await check("image entry opens full screen and closes with Esc", async () => {
+  await page.locator('button[aria-label="Enlarge image"]').first().click();
+  const box = await page.locator('[role="dialog"][aria-label="Image entry"]').boundingBox();
+  if (!box || box.width < 1400 || box.height < 880) throw new Error(`lightbox is ${box?.width}x${box?.height}, not full screen`);
+  await page.keyboard.press("Escape");
+  await page.locator('[role="dialog"][aria-label="Image entry"]').waitFor({ state: "detached", timeout: 3000 });
+});
+await check("ballots show vote percentages and mark my vote", async () => {
+  await waitText("Your vote", 3000);
+  await page.locator('section:has(input[aria-label="New Name entry"])').getByText("100%").first().waitFor({ timeout: 3000 });
+});
+await check("chat: post a message", async () => {
+  await page.click('button[role="tab"]:has-text("Live chat")');
+  await page.fill('[role="tabpanel"]:not([hidden]) textarea[aria-label="Message"]', "QA: this narrative is going places.");
+  await page.click('button[aria-label="Send message"]');
+  await page.getByText("QA: this narrative is going places.").waitFor({ timeout: 8000 });
+  await page.locator('[role="tab"]:has-text("Chat") span.num', { hasText: "1" }).waitFor({ timeout: 5000 });
+});
+await check("live chat: a second person's message arrives instantly, with headcount and unread badge", async () => {
+  const other = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const op = await other.newPage();
+  op.on("pageerror", (e) => problems.push(`[${section}] second visitor page error: ${e.message.slice(0, 200)}`));
+  await op.goto(urlA, { waitUntil: "load" });
+  await op.click('button[role="tab"]:has-text("Live chat")');
+  await page.getByText(/^2\s*here now$/).first().waitFor({ timeout: 8000 });
+  // Look away from the chat so the message counts as unread on the dock.
+  await page.click('button[role="tab"]:has-text("Ballots")');
+  const msg = "Second visitor: joining the pool as soon as it opens.\nWho's in?";
+  await op.fill('textarea[aria-label="Message"]', msg);
+  await op.keyboard.press("Enter");
+  await page.locator('button[aria-label^="Open live chat, 1 new"]').waitFor({ timeout: 8000 });
+  await page.click('button[aria-label^="Open live chat"]');
+  const dock = page.locator('section[aria-label="Live chat"]');
+  await dock.getByText("Who's in?").waitFor({ timeout: 5000 });
+  await page.keyboard.press("Escape");
+  await dock.waitFor({ state: "detached", timeout: 3000 });
+  const launcher = await page.locator('button[aria-label^="Open live chat"]').getAttribute("aria-label");
+  if (launcher !== "Open live chat") throw new Error(`unread badge not cleared: "${launcher}"`);
+  await other.close();
+  await page.click('button[role="tab"]:has-text("Live chat")');
+  await page.locator('[role="tabpanel"]:not([hidden])').getByText("Who's in?").waitFor({ timeout: 3000 });
+  await page.getByText(/^1\s*here now$/).first().waitFor({ timeout: 8000 });
+});
+await check("activity tab lists the votes", async () => {
+  await page.click('button[role="tab"]:has-text("Activity")');
+  await page.locator('[role="tabpanel"]:not([hidden])').getByText("voted").first().waitFor({ timeout: 5000 });
+});
+await check("star adds the coin to the watchlist", async () => {
+  await page.click('button[aria-pressed]:has-text("Watch")');
+  await page.locator('button:has-text("Watching")').waitFor({ timeout: 3000 });
+});
+// Voting here is shorter than the 1-minute lead, so the reminder fires right away: that
+// covers both setting it and it going off.
+await check("remind me sets a reminder, and it fires", async () => {
+  await page.click('button:has-text("Remind me")');
+  // Headless Chromium may report notifications as blocked; the in-page fallback is fine too.
+  await toast(/notify you in this browser|alert on this page instead/);
+  await toast(/Voting ends in 1 minute/, 8000);
+});
+await check("share copies the coin link", async () => {
+  await page.click('button:has-text("Share")');
+  await page.click('[role="menuitem"]:has-text("Copy link")');
+  await toast(/Link copied/);
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  if (!copied.endsWith(new URL(urlA).pathname)) throw new Error(`clipboard had ${copied}`);
+});
 await shot("1-voting");
 
 // ---- create B (for the refund path) -------------------------------------------------------------
@@ -207,6 +272,14 @@ await check("deposit list shows both deposits in order", async () => {
 await check("lock hash verifies in the browser", async () => {
   await page.click('button:has-text("Verify in browser")');
   await waitText("Metadata, winners and vote root hash to the lock hash", 8000);
+});
+await check("bonding curve chart shows where the pool buys", async () => {
+  await page.click('button[role="tab"]:has-text("Bonding curve")');
+  await waitText("Next buyer after the pool pays", 3000);
+});
+await check("holders tab lists my deposit", async () => {
+  await page.click('button[role="tab"]:has-text("Holders")');
+  await page.locator('[role="tabpanel"]:not([hidden])').getByText("100.0%").first().waitFor({ timeout: 5000 });
 });
 await check("signed votes download as JSON", async () => {
   const href = await page.getAttribute('a:has-text("Download signed votes")', "href");
@@ -274,10 +347,30 @@ await check("cards link to their narrative", async () => {
   await page.waitForURL(/\/n\//, { timeout: 8000 });
   await page.goBack();
 });
-await check("Ctrl+K focuses search and filters results", async () => {
+await check("watchlist tab shows the starred coin", async () => {
+  await page.click('[role="tab"]:has-text("Watchlist")');
+  const names = await page.locator(GRID_CARDS).allTextContents();
+  if (names.length !== 1 || !names[0].includes("Audit Dog")) throw new Error(`watchlist: ${names.length} cards`);
+});
+await check("trending tab ranks recent activity", async () => {
+  await page.click('[role="tab"]:has-text("Trending")');
+  if ((await page.locator(GRID_CARDS).count()) < 1) throw new Error("nothing trending");
+  await waitText("last 15 min", 3000);
+});
+await check("Ctrl+K palette finds a coin and opens it", async () => {
   await page.keyboard.press("Control+k");
+  await page.locator('input[role="combobox"]:focus').waitFor({ timeout: 3000 });
   await page.keyboard.type("audog");
-  await page.waitForURL(/\?q=audog/, { timeout: 5000 });
+  await page.locator('[role="option"]', { hasText: "Audit Dog" }).first().waitFor({ timeout: 5000 });
+  await page.keyboard.press("Enter");
+  await page.waitForURL(new RegExp(new URL(urlA).pathname), { timeout: 8000 });
+});
+await check("palette search-all shows results on the board", async () => {
+  await page.keyboard.press("Control+k");
+  await page.locator('input[role="combobox"]:focus').waitFor({ timeout: 3000 });
+  await page.keyboard.type("thinq");
+  await page.locator('[role="option"]', { hasText: "Search all coins" }).click();
+  await page.waitForURL(/\?q=thinq/, { timeout: 5000 });
   await page.locator("h2", { hasText: "Results for" }).waitFor({ timeout: 5000 });
   const n = await page.locator(GRID_CARDS).count();
   if (n !== 1) throw new Error(`expected 1 result, got ${n}`);
@@ -286,6 +379,17 @@ await check("clear search returns to the full page", async () => {
   await page.click('a:has-text("Clear search")');
   await page.waitForURL((u) => !u.search.includes("q="), { timeout: 5000 });
   await page.locator("h1").waitFor({ timeout: 5000 });
+});
+await check("portfolio lists both positions and claims everything unlocked", async () => {
+  await page.goto(`${base}/portfolio`, { waitUntil: "load" });
+  await waitText("Audit Dog", 8000);
+  await waitText("Refunded in full", 3000);
+  const claimAll = page.locator("button", { hasText: /^Claim all/ });
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /^Claim all \(\d+\)/.test(b.textContent ?? "") && !b.disabled), null, {
+    timeout: 20_000,
+  });
+  await claimAll.click();
+  await toast(/Claimed from 1 coin/);
 });
 await shot("5-home");
 
@@ -343,7 +447,7 @@ await check("mobile nav reaches Leaderboard", async () => {
 await check("mobile coin page shows the pool before the ballots", async () => {
   await page.goto(urlA, { waitUntil: "load" });
   const pool = await page.getByText("Community pool", { exact: true }).first().boundingBox();
-  const ballots = await page.getByText("Final ballots", { exact: true }).first().boundingBox();
+  const ballots = await page.getByRole("tab", { name: /Final ballots/ }).boundingBox();
   if (!pool || !ballots || pool.y > ballots.y) throw new Error("pool is below the ballots");
 });
 

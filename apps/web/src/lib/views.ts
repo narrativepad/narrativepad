@@ -81,7 +81,16 @@ export interface NarrativeCard {
   > | null;
   /** Normalised 0..1 cumulative pool size over time (sparkline). */
   flow: number[] | null;
+  comments: number;
+  /** Activity in the last TREND_MINUTES, for the Trending tab. */
+  trend: { votes: number; comments: number; deposits: number; lamports: string; score: number };
 }
+
+export const TREND_MINUTES = 15;
+
+/** Momentum: deposits weigh most, then votes, then chat. */
+const trendScore = (votes: number, comments: number, deposits: number, lamports: bigint) =>
+  votes + comments * 0.5 + deposits * 3 + Number(lamports) / 5e8;
 
 export interface ActivityItem {
   kind: "vote" | "submit" | "deposit" | "claim" | "refund";
@@ -164,6 +173,11 @@ export async function feed(limit = 120): Promise<NarrativeCard[]> {
   const rows = await q<any>(
     `SELECT n.*, l.name AS l_name, l.symbol AS l_symbol, l.image AS l_image,
             (SELECT COUNT(*)::int FROM votes v WHERE v.narrative_id = n.id) AS vote_count,
+            (SELECT COUNT(*)::int FROM comments c WHERE c.narrative_id = n.id AND NOT c.hidden) AS comment_count,
+            (SELECT COUNT(*)::int FROM votes v WHERE v.narrative_id = n.id AND v.created_at > now() - make_interval(mins => ${TREND_MINUTES})) AS t_votes,
+            (SELECT COUNT(*)::int FROM comments c WHERE c.narrative_id = n.id AND NOT c.hidden AND c.created_at > now() - make_interval(mins => ${TREND_MINUTES})) AS t_comments,
+            (SELECT COUNT(*)::int FROM deposits d WHERE d.narrative_id = n.id AND d.created_at > now() - make_interval(mins => ${TREND_MINUTES})) AS t_deposits,
+            (SELECT COALESCE(SUM(d.amount), 0)::text FROM deposits d WHERE d.narrative_id = n.id AND d.created_at > now() - make_interval(mins => ${TREND_MINUTES})) AS t_lamports,
             e.narrative_id AS e_id, e.*
        FROM narratives n
        LEFT JOIN locks l ON l.narrative_id = n.id
@@ -232,6 +246,14 @@ export async function feed(limit = 120): Promise<NarrativeCard[]> {
         unlocked: e.unlocked,
       },
       flow: flowSpark(amounts.get(r.id) ?? []),
+      comments: Number(r.comment_count),
+      trend: {
+        votes: Number(r.t_votes),
+        comments: Number(r.t_comments),
+        deposits: Number(r.t_deposits),
+        lamports: big(r.t_lamports).toString(),
+        score: trendScore(Number(r.t_votes), Number(r.t_comments), Number(r.t_deposits), big(r.t_lamports)),
+      },
     };
   });
 }
@@ -322,13 +344,27 @@ export interface NarrativeDetail {
   /** Cumulative pool size after each deposit (for the pool-flow chart). */
   flow: { t: number; total: string }[];
   activity: ActivityItem[];
+  comments: CommentView[];
+  /** One row per depositing wallet, biggest first. Tokens only once launched. */
+  holders: { wallet: string; amount: string; sharePct: number; tokens: string | null; refunded: boolean; isTeam: boolean }[];
   preview: boolean;
+}
+
+export interface CommentView {
+  id: string;
+  wallet: string;
+  body: string;
+  at: string;
+  isCreator: boolean;
+  isTeam: boolean;
+  /** Has SOL in this narrative's pool (not refunded). */
+  inPool: boolean;
 }
 
 export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | null> {
   const n = await q1<any>(`SELECT * FROM narratives WHERE slug = $1`, [slug]);
   if (!n) return null;
-  const [list, lock, e, deps, voteCount, voterCount, feedItems] = await Promise.all([
+  const [list, lock, e, deps, voteCount, voterCount, feedItems, comments, receiptRows] = await Promise.all([
     entries(n.id),
     q1<any>(`SELECT * FROM locks WHERE narrative_id = $1`, [n.id]),
     q1<any>(`SELECT * FROM escrows WHERE narrative_id = $1`, [n.id]),
@@ -336,7 +372,10 @@ export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | n
     q1<any>(`SELECT COUNT(*)::int AS c FROM votes WHERE narrative_id = $1`, [n.id]),
     q1<any>(`SELECT COUNT(DISTINCT voter_wallet)::int AS c FROM votes WHERE narrative_id = $1`, [n.id]),
     activity(n.id),
+    commentsFor(n.id, n.creator_wallet),
+    q<any>(`SELECT wallet, amount, refunded FROM receipts WHERE narrative_id = $1 ORDER BY amount DESC, first_order_index ASC`, [n.id]),
   ]);
+  const poolTotal = receiptRows.reduce((s, r) => s + big(r.amount), 0n);
   const team = config.teamWallets;
   const lead = winners(list);
   const ballots = Object.fromEntries(
@@ -392,8 +431,42 @@ export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | n
     })),
     flow: deps.map((d) => ({ t: date(d.created_at).getTime(), total: (running += big(d.amount)).toString() })),
     activity: feedItems,
+    comments,
+    holders: receiptRows.map((r) => ({
+      wallet: r.wallet,
+      amount: big(r.amount).toString(),
+      sharePct: poolTotal > 0n ? Number((big(r.amount) * 1_000_000n) / poolTotal) / 10_000 : 0,
+      tokens: escrow?.launched ? proRata(BigInt(escrow.tokensBought), big(r.amount), BigInt(escrow.totalDeposited)).toString() : null,
+      refunded: Boolean(r.refunded),
+      isTeam: team.has(r.wallet),
+    })),
     preview: preview(),
   };
+}
+
+/** A coin's chat, oldest first: the latest 200, or only those after `after` (live updates). */
+export async function commentsFor(narrativeId: string, creatorWallet: string, after?: Date): Promise<CommentView[]> {
+  const [rows, holders] = await Promise.all([
+    after
+      ? q<any>(
+          `SELECT id, wallet, body, created_at FROM comments WHERE narrative_id = $1 AND NOT hidden AND created_at > $2 ORDER BY created_at ASC LIMIT 200`,
+          [narrativeId, after],
+        )
+      : q<any>(`SELECT id, wallet, body, created_at FROM comments WHERE narrative_id = $1 AND NOT hidden ORDER BY created_at DESC LIMIT 200`, [narrativeId]).then(
+          (r) => r.reverse(),
+        ),
+    q<{ wallet: string }>(`SELECT wallet FROM receipts WHERE narrative_id = $1 AND NOT refunded AND amount > 0`, [narrativeId]),
+  ]);
+  const inPool = new Set(holders.map((h) => h.wallet));
+  return rows.map((c) => ({
+    id: c.id,
+    wallet: c.wallet,
+    body: c.body,
+    at: date(c.created_at).toISOString(),
+    isCreator: c.wallet === creatorWallet,
+    isTeam: config.teamWallets.has(c.wallet),
+    inPool: inPool.has(c.wallet),
+  }));
 }
 
 /** What a wallet can do right now in an escrow (for the claim/refund buttons). */
@@ -403,6 +476,11 @@ export async function walletPosition(narrativeId: string, wallet: string) {
     q1<any>(`SELECT * FROM receipts WHERE narrative_id = $1 AND wallet = $2`, [narrativeId, wallet]),
   ]);
   if (!e || !r) return null;
+  return positionFrom(e, r);
+}
+
+/** Position maths for one receipt in one escrow row (shared by the coin page and the portfolio). */
+function positionFrom(e: any, r: any) {
   const total = big(e.total_deposited);
   const amount = big(r.amount);
   const count = Number(e.tranche_count);
@@ -427,6 +505,56 @@ export async function walletPosition(narrativeId: string, wallet: string) {
     trancheCount: count,
     refunded: Boolean(r.refunded),
   };
+}
+
+export interface PortfolioItem extends ReturnType<typeof positionFrom> {
+  narrativeId: string;
+  slug: string;
+  title: string;
+  ticker: string | null;
+  image: string | null;
+  stage: Stage;
+  phase: Phase;
+  depositEnd: string;
+  launchAfter: string;
+}
+
+/** Every pool a wallet has joined, with what it can claim or refund right now. */
+export async function portfolio(wallet: string): Promise<PortfolioItem[]> {
+  const receipts = await q<any>(`SELECT * FROM receipts WHERE wallet = $1`, [wallet]);
+  if (receipts.length === 0) return [];
+  const ids = receipts.map((r) => r.narrative_id);
+  const [escrows, meta] = await Promise.all([
+    q<any>(`SELECT * FROM escrows WHERE narrative_id = ANY($1)`, [ids]),
+    q<any>(
+      `SELECT n.id, n.slug, n.created_at, n.hidden, l.name, l.symbol, l.image
+         FROM narratives n LEFT JOIN locks l ON l.narrative_id = n.id WHERE n.id = ANY($1)`,
+      [ids],
+    ),
+  ]);
+  const escrowBy = new Map(escrows.map((e) => [e.narrative_id, e]));
+  const metaBy = new Map(meta.map((m) => [m.id, m]));
+  const items: (PortfolioItem & { created: number })[] = [];
+  for (const r of receipts) {
+    const e = escrowBy.get(r.narrative_id);
+    const m = metaBy.get(r.narrative_id);
+    if (!e || !m) continue;
+    const view = escrowView(e);
+    items.push({
+      narrativeId: r.narrative_id,
+      slug: m.slug,
+      title: m.name ?? "Untitled narrative",
+      ticker: m.symbol ?? null,
+      image: m.image ?? null,
+      stage: stageFromPhase(view.phase),
+      phase: view.phase,
+      depositEnd: view.depositEnd,
+      launchAfter: view.launchAfter,
+      created: date(m.created_at).getTime(),
+      ...positionFrom(e, r),
+    });
+  }
+  return items.sort((a, b) => b.created - a.created).map(({ created: _created, ...rest }) => rest);
 }
 
 // ---- profile & leaderboard ------------------------------------------------------------------

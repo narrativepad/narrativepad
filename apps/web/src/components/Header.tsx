@@ -2,10 +2,10 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useIdentity } from "@/lib/client/useSigned";
 import { Avatar, Icon, Logo } from "./bits";
+import { CommandPalette, openPalette } from "./CommandPalette";
 
 const WalletButton = dynamic(
   async () => {
@@ -29,50 +29,10 @@ const WalletButton = dynamic(
 const NAV = [
   { href: "/", label: "Explore" },
   { href: "/create", label: "Create" },
+  { href: "/portfolio", label: "Portfolio" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/how-it-works", label: "How it works" },
 ];
-
-function Search() {
-  const router = useRouter();
-  const params = useSearchParams();
-  const path = usePathname();
-  const ref = useRef<HTMLInputElement>(null);
-  const [q, setQ] = useState(params.get("q") ?? "");
-  useEffect(() => setQ(params.get("q") ?? ""), [params]);
-  useEffect(() => {
-    const current = params.get("q") ?? "";
-    if (q === current || (path !== "/" && !q)) return;
-    const t = setTimeout(() => router.replace(q ? `/?q=${encodeURIComponent(q)}` : "/", { scroll: false }), 250);
-    return () => clearTimeout(t);
-  }, [q, params, path, router]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        ref.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-  return (
-    <label className="relative hidden w-full max-w-[15rem] xl:block 2xl:max-w-[19rem]">
-      <span className="sr-only">Search narratives</span>
-      <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-dim" />
-      <input
-        ref={ref}
-        className="h-[2.375rem] w-full rounded-full border border-white/[0.08] bg-white/[0.04] pl-10 pr-14 text-sm text-ink outline-none transition-colors placeholder:text-dim focus:border-white/20 focus:bg-white/[0.06]"
-        placeholder="Search coins"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-      />
-      <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-white/10 px-1.5 py-0.5 font-mono text-[0.62rem] text-dim">
-        Ctrl K
-      </kbd>
-    </label>
-  );
-}
 
 function Identity() {
   const { address, name, kind } = useIdentity();
@@ -97,6 +57,7 @@ export function Header() {
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
   return (
     <header className="sticky top-0 z-40 shrink-0 border-b border-white/[0.06] bg-bg/70 backdrop-blur-2xl backdrop-saturate-150">
+      <CommandPalette />
       <div className="flex h-16 w-full items-center gap-3 px-4 sm:px-5 lg:gap-10 lg:px-8 2xl:px-10">
         <Link href="/" className="flex shrink-0 items-center gap-2.5" aria-label="narrativepad home">
           <Logo size={30} />
@@ -110,9 +71,23 @@ export function Header() {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-2.5">
-          <Suspense>
-            <Search />
-          </Suspense>
+          <button
+            type="button"
+            onClick={openPalette}
+            className="hidden h-[2.375rem] w-[15rem] items-center gap-2.5 rounded-full border border-white/[0.08] bg-white/[0.04] pl-3.5 pr-2.5 text-sm text-dim transition-colors hover:border-white/15 hover:text-muted xl:flex 2xl:w-[19rem]"
+          >
+            <Icon name="search" className="h-4 w-4" />
+            Search coins
+            <kbd className="ml-auto rounded-md border border-white/10 px-1.5 py-0.5 font-mono text-[0.62rem]">Ctrl K</kbd>
+          </button>
+          <button
+            type="button"
+            onClick={openPalette}
+            aria-label="Search coins"
+            className="flex h-[2.375rem] w-[2.375rem] items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-muted hover:text-ink xl:hidden"
+          >
+            <Icon name="search" className="h-4 w-4" />
+          </button>
           <Link href="/create" className="btn-primary hidden h-[2.375rem] py-0 sm:inline-flex">
             <Icon name="plus" className="h-4 w-4" />
             Start a narrative

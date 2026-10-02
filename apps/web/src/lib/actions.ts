@@ -4,7 +4,7 @@ import { HttpError, type Verified } from "./auth";
 import { chain, ChainError } from "./chain";
 import { config } from "./config";
 import { publish } from "./events";
-import { addSubmission, castVote } from "./narratives";
+import { addComment, addSubmission, castVote } from "./narratives";
 
 function sameNarrative(routeId: string, payloadId: string) {
   if (routeId !== payloadId) throw new HttpError(400, "Narrative mismatch");
@@ -39,11 +39,16 @@ export async function voteAction(id: string, v: Verified<"vote">) {
   return { ok: true };
 }
 
+export async function commentAction(id: string, v: Verified<"comment">) {
+  sameNarrative(id, v.payload.narrativeId);
+  return addComment(v);
+}
+
 export async function depositAction(id: string, v: Verified<"deposit">) {
   sameNarrative(id, v.payload.narrativeId);
   simulationOnly();
   const out = await viaChain(() => chain().deposit(id, v.wallet, BigInt(v.payload.amountLamports)));
-  publish(id, "deposit");
+  publish(id, "deposit", { wallet: v.wallet, amount: v.payload.amountLamports });
   return json(out);
 }
 

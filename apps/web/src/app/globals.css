@@ -23,11 +23,44 @@
   --font-display: var(--font-serif), ui-serif, Georgia, serif;
   --breakpoint-3xl: 120rem;
   --animate-marquee: marquee var(--marquee-duration, 60s) linear infinite;
-  --animate-rise: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  /* Entry animations use fill "backwards": once finished they leave no transform behind,
+     which would otherwise trap position:fixed descendants. */
+  --animate-rise: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
   --animate-spin-slow: orbit 60s linear infinite;
   --animate-spin-slower: orbit 110s linear infinite reverse;
   --animate-float: float 6s ease-in-out infinite;
   --animate-inflow: inflow 3.2s cubic-bezier(0.5, 0, 0.75, 0) infinite;
+  --animate-shimmer: shimmer 2.4s ease-in-out infinite;
+  --animate-fade: fade 0.35s ease-out backwards;
+  --animate-skeleton: skeleton 1.4s ease-in-out infinite;
+
+  @keyframes shimmer {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(400%);
+    }
+  }
+  @keyframes fade {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes skeleton {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
 
   @keyframes marquee {
     from {
@@ -129,9 +162,12 @@ body::after {
   background: rgb(61 242 163 / 0.28);
 }
 
-:focus-visible {
-  outline: 2px solid rgb(255 255 255 / 0.55);
-  outline-offset: 2px;
+/* In the base layer so `outline-none` on inputs can opt out. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid rgb(255 255 255 / 0.55);
+    outline-offset: 2px;
+  }
 }
 
 * {
@@ -303,7 +339,15 @@ body::after {
   .animate-spin-slow,
   .animate-spin-slower,
   .animate-float,
-  .animate-inflow {
+  .animate-inflow,
+  .animate-shimmer,
+  .animate-fade,
+  .animate-skeleton {
     animation: none;
   }
+}
+
+/* Loading placeholders. */
+.skeleton {
+  @apply animate-skeleton rounded-xl bg-white/[0.06];
 }

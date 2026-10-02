@@ -15,6 +15,22 @@ export const FIELD_LABEL: Record<Field, string> = {
 };
 export const REQUIRED_FIELDS: Field[] = ["name", "ticker"];
 
+/** Chat limits (D-016): text only, up to 300 words across at most 30 lines. */
+export const COMMENT_MAX_WORDS = 300;
+export const COMMENT_MAX_CHARS = 2000;
+export const COMMENT_MAX_LINES = 30;
+export const countWords = (s: string) => (s.trim() ? s.trim().split(/\s+/).length : 0);
+
+/** The chat text that gets signed: no CRs or trailing spaces, at most one blank line in a row. */
+export const normaliseComment = (s: string) =>
+  s
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
 const solAddress = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "invalid wallet");
 const id = z.string().uuid();
 const httpsUrl = z.string().url().max(300).refine((u) => u.startsWith("https://"), "must be https");
@@ -34,10 +50,11 @@ export const payloadSchemas = {
   claim: z.object({ narrativeId: id }),
   refund: z.object({ narrativeId: id }),
   report: z.object({
-    targetType: z.enum(["narrative", "submission"]),
+    targetType: z.enum(["narrative", "submission", "comment"]),
     targetId: id,
     reason: z.string().trim().min(3).max(200),
   }),
+  comment: z.object({ narrativeId: id, body: z.string().trim().min(1).max(COMMENT_MAX_CHARS) }),
 } as const;
 
 export type Action = keyof typeof payloadSchemas;
@@ -51,6 +68,7 @@ const TITLE: Record<Action, string> = {
   claim: "Claim from the pool",
   refund: "Refund from the pool",
   report: "Report content",
+  comment: "Post a comment",
 };
 
 function lines<A extends Action>(action: A, p: Payload<A>, simulation: boolean): [string, string][] {
@@ -90,6 +108,10 @@ function lines<A extends Action>(action: A, p: Payload<A>, simulation: boolean):
     case "report": {
       const r = p as Payload<"report">;
       return [["Target", `${r.targetType} ${r.targetId}`], ["Reason", r.reason]];
+    }
+    case "comment": {
+      const c = p as Payload<"comment">;
+      return [["Narrative", c.narrativeId], ["Comment", c.body]];
     }
   }
   return [];

@@ -96,14 +96,29 @@ export function Coin({ image, ticker, size = 44, stage }: { image: string | null
   );
 }
 
-export function ProgressBar({ value, max, marker, tone = "accent" }: { value: bigint; max: bigint; marker?: bigint; tone?: "accent" | "info" | "warn" }) {
+export function ProgressBar({
+  value,
+  max,
+  marker,
+  tone = "accent",
+  live = false,
+}: {
+  value: bigint;
+  max: bigint;
+  marker?: bigint;
+  tone?: "accent" | "info" | "warn";
+  /** A light sweep across the fill while the pool is open. */
+  live?: boolean;
+}) {
   const pct = max > 0n ? Number((value * 10_000n) / max) / 100 : 0;
   const mk = marker && max > 0n ? Number((marker * 10_000n) / max) / 100 : null;
   const fill =
     tone === "info" ? "from-info/70 to-info" : tone === "warn" ? "from-warn/70 to-warn" : "from-accent to-accent-2";
   return (
     <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
-      <div className={`h-full rounded-full bg-gradient-to-r ${fill} transition-[width] duration-700`} style={{ width: `${Math.min(100, pct)}%` }} />
+      <div className={`relative h-full overflow-hidden rounded-full bg-gradient-to-r ${fill} transition-[width] duration-700 ease-out`} style={{ width: `${Math.min(100, pct)}%` }}>
+        {live && pct > 0 && <span className="absolute inset-y-0 -left-1/2 w-1/2 animate-shimmer bg-gradient-to-r from-transparent via-white/50 to-transparent" />}
+      </div>
       {mk !== null && <div className="absolute top-0 h-full w-px bg-white/60" style={{ left: `${Math.min(100, mk)}%` }} title="Minimum to launch" />}
     </div>
   );
@@ -130,6 +145,16 @@ const ICONS = {
   arrow: "M5 12h14M13 6l6 6-6 6",
   scale: "M12 3v18M8 21h8M5 7h14M5 7l-3 7a3 3 0 0 0 6 0L5 7ZM19 7l-3 7a3 3 0 0 0 6 0l-3-7Z",
   wallet: "M3 7a2 2 0 0 1 2-2h13v4M3 7v10a2 2 0 0 0 2 2h15v-5M3 7h17v5h-4a2.5 2.5 0 0 0 0 5h4",
+  bell: "M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0",
+  star: "M12 2.8l2.85 5.95 6.5.78-4.8 4.5 1.24 6.47L12 17.3l-5.79 3.2 1.24-6.47-4.8-4.5 6.5-.78L12 2.8Z",
+  share: "M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13",
+  chat: "M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-5A8 8 0 1 1 21 12Z",
+  chevron: "M9 6l6 6-6 6",
+  close: "M6 6l12 12M18 6L6 18",
+  flag: "M5 21V4M5 4h11l-2 4 2 4H5",
+  briefcase: "M3 7h18v13H3V7ZM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18",
+  trend: "M3 17l6-6 4 4 8-8M15 7h6v6",
+  send: "M22 2L11 13M22 2l-7 20-4-9-9-4 20-7Z",
 } as const;
 
 export function Icon({ name, className = "h-4 w-4" }: { name: keyof typeof ICONS; className?: string }) {
