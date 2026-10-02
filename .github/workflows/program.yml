@@ -1,0 +1,104 @@
+# Builds the escrow program (and the test-only pump stand-in) and runs its unit, property and
+# LiteSVM tests on GitHub's machines, so nothing has to be installed locally.
+# Build and test only: no deploys, no keys, no secrets.
+name: escrow program
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "programs/**"
+      - "tests/mock_pump/**"
+      - "idls/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Anchor.toml"
+      - "scripts/test-program.sh"
+      - ".github/workflows/program.yml"
+  pull_request:
+    paths:
+      - "programs/**"
+      - "tests/mock_pump/**"
+      - "idls/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Anchor.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: program-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      # Pinned to the versions in scripts/setup-wsl.sh (ARCHITECTURE.md §12.1).
+      AGAVE_VERSION: v4.1.2
+      ANCHOR_VERSION: 1.2.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System packages
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential pkg-config libudev-dev llvm libclang-dev protobuf-compiler libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+
+      - name: Cache Solana CLI and Anchor
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/solana
+            ~/.avm
+          key: sol-${{ runner.os }}-${{ env.AGAVE_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}
+
+      - name: Install Agave (Solana CLI)
+        run: |
+          if [ ! -x "$HOME/.local/share/solana/install/active_release/bin/solana" ]; then
+            sh -c "$(curl -sSfL https://release.anza.xyz/${AGAVE_VERSION}/install)"
+          fi
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor
+        run: |
+          command -v avm >/dev/null 2>&1 || cargo install --git https://github.com/otter-sec/anchor avm --force --locked
+          avm install "${ANCHOR_VERSION}" || true
+          avm use "${ANCHOR_VERSION}"
+
+      - name: Versions
+        run: |
+          rustc --version
+          solana --version
+          anchor --version
+
+      # anchor build reads the provider wallet from Anchor.toml. This throwaway key is never
+      # funded or used to sign anything.
+      - name: Throwaway build wallet
+        run: |
+          mkdir -p ~/.config/solana
+          solana-keygen new --no-bip39-passphrase --silent --force -o ~/.config/solana/id.json >/dev/null
+
+      - name: Build and test
+        run: bash scripts/test-program.sh
+
+      - name: Upload build output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: narrative-escrow-build
+          if-no-files-found: ignore
+          path: |
+            target/deploy/narrative_escrow.so
+            target/idl/narrative_escrow.json
+            target/types/narrative_escrow.ts
+            Cargo.lock
