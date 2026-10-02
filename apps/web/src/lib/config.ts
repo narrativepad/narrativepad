@@ -40,6 +40,17 @@ export const config = {
     (process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : "http://localhost:3000"),
+  /** CHAIN=solana (D-021). Devnet only: the adapter checks the genesis hash before sending. The
+   *  RPC URL may carry an API key, so it never goes to the browser. */
+  solana: {
+    rpcUrl:
+      process.env.SOLANA_RPC_URL ||
+      (process.env.HELIUS_API_KEY ? `https://devnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}` : "https://api.devnet.solana.com"),
+    /** Address lookup table for `launch` (scripts/devnet-create-alt.ts). */
+    launchAlt: process.env.LAUNCH_ALT || null,
+    /** Who pays pump's create rent: the vault (default) or the cranker (fallback §4.3b). */
+    createPayer: (process.env.LAUNCH_CREATE_PAYER === "cranker" ? "cranker" : "vault") as "vault" | "cranker",
+  },
 };
 
 /** Values the browser may see. */

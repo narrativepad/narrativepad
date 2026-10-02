@@ -160,6 +160,33 @@ export default function HowItWorksPage() {
           </div>
         </section>
       )}
+
+      {config.chain === "solana" && (
+        <section id="preview" className="panel scroll-mt-24">
+          <div className="panel-head">
+            <span>About devnet</span>
+            <span className="chip border-warn/30 text-warn">test SOL only</span>
+          </div>
+          <div className="grid gap-5 p-5 text-sm leading-relaxed text-muted lg:grid-cols-3 lg:p-6">
+            <p>
+              <span className="font-semibold text-ink">The escrow is live on devnet.</span> Pools, launches on pump.fun&apos;s devnet, claims and refunds
+              are real transactions on Solana&apos;s test network. Devnet SOL is free and worth nothing.
+            </p>
+            <p>
+              <span className="font-semibold text-ink">To join a pool:</span> switch your wallet (Phantom, Solflare, Backpack) to devnet, get free SOL
+              at{" "}
+              <a className="text-ink underline" href="https://faucet.solana.com" target="_blank" rel="noopener noreferrer">
+                faucet.solana.com
+              </a>
+              , then join. Your wallet signs the deposit and your holder-rewards vote in one transaction.
+            </p>
+            <p>
+              <span className="font-semibold text-ink">Check everything yourself.</span> Every pool shows its escrow address, and every deposit, launch,
+              claim and refund links to the Solana explorer. Mainnet comes only after an external audit.
+            </p>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

@@ -2,7 +2,6 @@
 // it can cross the server→client boundary. Only data the system actually has is shown: no
 // invented market prices, and no placeholder addresses in preview mode.
 import "server-only";
-import { chain } from "./chain";
 import { config } from "./config";
 import { big, date, q, q1 } from "./db";
 import { proRata, unlockedTranches, vested } from "./math";
@@ -12,7 +11,6 @@ import { pumpPairs } from "./pumpPairs";
 import { entries, winners, type Entry } from "./narratives";
 import { phaseOf, stageFromPhase, type Phase, type Stage } from "./phase";
 
-const preview = () => config.chain === "mock";
 
 export interface EscrowView {
   /** On-chain addresses; null in preview mode (nothing is on-chain yet). */
@@ -117,8 +115,10 @@ export interface GlobalActivityItem extends ActivityItem {
   title: string;
 }
 
+/** Devnet explorer links for on-chain escrows (D-021), whichever chain this server runs. */
+const explorer = (kind: "address" | "tx", id: string) => `https://explorer.solana.com/${kind}/${id}?cluster=devnet`;
+
 function escrowView(e: any): EscrowView {
-  const c = chain();
   const now = Date.now();
   const phase = phaseOf(
     {
@@ -132,13 +132,14 @@ function escrowView(e: any): EscrowView {
     },
     now,
   );
-  const onchain = !preview();
+  // Simulated escrows have placeholder addresses, so only real ones are shown.
+  const onchain = e.chain === "solana";
   return {
     address: onchain ? e.address : null,
-    addressUrl: onchain ? c.explorer.address(e.address) : null,
+    addressUrl: onchain ? explorer("address", e.address) : null,
     mint: onchain ? (e.mint ?? null) : null,
-    mintUrl: onchain && e.mint ? c.explorer.token(e.mint) : null,
-    launchTxUrl: onchain && e.launch_tx ? c.explorer.tx(e.launch_tx) : null,
+    mintUrl: onchain && e.mint ? explorer("address", e.mint) : null,
+    launchTxUrl: onchain && e.launch_tx ? explorer("tx", e.launch_tx) : null,
     phase,
     poolCap: big(e.pool_cap).toString(),
     poolMin: big(e.pool_min).toString(),
@@ -465,7 +466,7 @@ export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | n
       refunded: Boolean(r.refunded),
       isTeam: team.has(r.wallet),
     })),
-    preview: preview(),
+    preview: n.chain === "mock",
     pairOptions: stage === "voting" ? await pumpPairs({ wait: false }) : [],
   };
 }

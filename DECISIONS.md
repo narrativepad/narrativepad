@@ -333,4 +333,40 @@ Format: date — decision — why — alternatives considered — decided by.
   - `init_config` is done: config `4Vct…nWk5`, operator `Atj9…1sH9`, treasury = deploy
     key, 1% fee, 30/20 creator split, max pool 0.5 SOL.
   - Verified by reading the program and config accounts back from devnet.
+
+### D-021 · 2026-10-02 · The website on devnet (CHAIN=solana)
+- **Decision:** a real `ChainAdapter` for the deployed escrow, plus a wallet-signed deposit in
+  the browser. The instruction builders, PDAs and decoders live in `src/lib/solana/escrow.ts`,
+  written by hand from the published IDL like the program's own pump CPI (no Anchor client),
+  and are shared by the browser and the server.
+- **Who signs what:**
+  - **Deposit:** the depositor's wallet. One transaction carries a memo with the holder-rewards
+    vote, then the deposit, so the vote is signed by the depositor and lives on-chain next to
+    the deposit (anyone can recount it).
+  - **Create escrow:** the operator key (`Atj9…1sH9`, Railway env `OPERATOR_KEYPAIR`).
+  - **Launch:** the operator as cranker, as a v0 transaction with the address lookup table
+    `GRiW…6yL` (`LAUNCH_ALT`); ~40 accounts don't fit a legacy transaction. pump's fee
+    recipients are read from its Global at launch.
+  - **Claim and refund:** pushed by the server after a signed message. The program allows
+    anyone to send them and pays only the depositor. When a pool can't launch, the scheduler
+    refunds every depositor automatically.
+- **Chain is the source of truth:**
+  - `sync` reads the escrow account (totals) and every new escrow transaction (`Deposited`,
+    `Claimed`, `Refunded`, `Launched` events plus the vote memo) into the cache tables.
+  - It runs from the scheduler (every 8s per open pool) and right after a browser deposit
+    (`POST /api/narratives/[id]/sync`).
+- **Safety:**
+  - The adapter checks the RPC's genesis hash and refuses anything but devnet.
+  - The RPC URL (it may carry a Helius key) and the operator key never reach the browser or
+    the logs.
+  - Simulated escrows keep their "preview" labels; only `chain = 'solana'` escrows show
+    addresses and explorer links.
+- **Devnet limits:**
+  - pool cap ≤ 0.5 SOL (config), pool minimum ≥ 0.1 SOL (program).
+  - pump has holder rewards switched off on devnet, so devnet coins launch with them off;
+    the vote is still recorded and shown.
+  - Only SOL pairs launch.
+- **Alternatives:** Anchor's TS client (heavier, and it pins web3 versions); server-side
+  deposits (custodial, rejected); an indexer service (overkill for devnet; `sync` is enough
+  for now).
 - **Decided by:** owner ("start devnet", "why can't it happen without my wallets") + Claude.

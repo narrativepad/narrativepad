@@ -23,7 +23,9 @@ function FeeRow({ n }: { n: NarrativeDetail }) {
     return (
       <span>
         <span className="text-ink">{m.title}</span>
-        <span className="block text-dim">{m.sub}. Voted by the pool.</span>
+        <span className="block text-dim">
+          {n.preview ? `${m.sub}. Voted by the pool.` : "Devnet: pump.fun has holder rewards switched off there, so devnet coins launch with them off. The pool's vote is still recorded."}
+        </span>
       </span>
     );
   }

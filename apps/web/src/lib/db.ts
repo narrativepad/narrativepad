@@ -109,6 +109,8 @@ CREATE TABLE IF NOT EXISTS escrows (
 ALTER TABLE escrows ADD COLUMN IF NOT EXISTS holder_votes_on BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE escrows ADD COLUMN IF NOT EXISTS holder_votes_off BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE escrows ADD COLUMN IF NOT EXISTS holder_rewards BOOLEAN;
+-- D-021: newest escrow transaction already read back from the chain (CHAIN=solana).
+ALTER TABLE escrows ADD COLUMN IF NOT EXISTS sync_sig TEXT;
 
 CREATE TABLE IF NOT EXISTS receipts (
   narrative_id TEXT NOT NULL REFERENCES narratives(id),

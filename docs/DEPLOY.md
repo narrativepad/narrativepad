@@ -86,6 +86,29 @@ cd apps\web
 node scripts/devnet-init-config.mjs $key Atj9Fqh2Xn9ut7Jtu16jMAYmtvL3e9UFtUXaUYL61sH9 8JU2abVm7cNS7FQwegZyEGyC7BkaJXzdAmBATLg84Wed 0.5
 ```
 
+Then the launch lookup table (operator key; prints `LAUNCH_ALT`). Live: `GRiWun6iNxYFuKiyBTLtK1nxR5QoREBisicRc5QXR6yL`.
+
+```powershell
+node --experimental-strip-types scripts/devnet-create-alt.ts "$env:USERPROFILE\.config\solana\narrativepad-devnet-operator.json" 8JU2abVm7cNS7FQwegZyEGyC7BkaJXzdAmBATLg84Wed
+```
+
+### The site on devnet (CHAIN=solana, D-021)
+
+Railway variables: `CHAIN=solana`, `LAUNCH_ALT=<table>`, and the pool limits the program
+allows on devnet: `POOL_CAP_SOL=0.5`, `POOL_MIN_SOL=0.1`, `PER_WALLET_MAX_SOL=0.25`,
+`MIN_DEPOSIT_SOL=0.01`. `HELIUS_API_KEY` (already set) makes the server use Helius devnet.
+
+The secret operator key goes from its file straight into Railway, without being printed:
+
+```powershell
+$k = (Get-Content -Raw "$env:USERPROFILE\.config\solana\narrativepad-devnet-operator.json").Trim()
+railway variables --service web --set "OPERATOR_KEYPAIR=$k" --skip-deploys *> $null; $LASTEXITCODE
+```
+
+Full on-chain check against a local server (see the script header for the env):
+`node --experimental-strip-types scripts/devnet-e2e.ts http://localhost:3921 <funder-keypair.json>`.
+Keep the operator topped up with devnet SOL (`solana transfer Atj9… 0.5 -k <deploy key> --url devnet`).
+
 The same `deploy` command upgrades the program later. Mainnet uses a different authority (a
 multisig with a timelock) and only after an external audit; see ARCHITECTURE.md (Q10) and CLAUDE.md.
 

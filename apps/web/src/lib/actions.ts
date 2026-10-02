@@ -52,9 +52,10 @@ export async function depositAction(id: string, v: Verified<"deposit">) {
   return json(out);
 }
 
+// On-chain, claims and refunds are pushed by the server: the program lets anyone send them and
+// always pays the depositor, so the signed message only says which wallet to push for.
 export async function claimAction(id: string, v: Verified<"claim">) {
   sameNarrative(id, v.payload.narrativeId);
-  simulationOnly();
   const out = await viaChain(() => chain().claim(id, v.wallet));
   publish(id, "claim");
   return json(out);
@@ -62,7 +63,6 @@ export async function claimAction(id: string, v: Verified<"claim">) {
 
 export async function refundAction(id: string, v: Verified<"refund">) {
   sameNarrative(id, v.payload.narrativeId);
-  simulationOnly();
   const out = await viaChain(() => chain().refund(id, v.wallet));
   publish(id, "refund");
   return json(out);

@@ -4,6 +4,9 @@ import { useMemo, useState } from "react";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { Icon, ProgressBar, TeamBadge, Who } from "@/components/bits";
 import { Countdown } from "@/components/Countdown";
+import { useRouter } from "next/navigation";
+import { useToast } from "@/components/Providers";
+import { chainErrorMessage, useOnchainDeposit } from "@/lib/client/onchain";
 import { useMine } from "@/lib/client/useMine";
 import { useSigned } from "@/lib/client/useSigned";
 import { formatSol, formatTokens, launchBreakdown, parseSol } from "@/lib/math";
@@ -25,6 +28,13 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
   const e = n.escrow!;
   const { run, busy } = useSigned();
   const { position } = useMine(n.id, version);
+  const toast = useToast();
+  const router = useRouter();
+  // On-chain pools (devnet) take a wallet-signed deposit; simulated ones a signed message.
+  const onchain = !n.preview;
+  const { deposit: sendDeposit, connected, connect } = useOnchainDeposit();
+  const [sending, setSending] = useState(false);
+  const needWallet = onchain && !connected;
   const [amount, setAmount] = useState("");
   /** This deposit's holder-rewards vote; no default, so nobody votes without choosing. */
   const [holderRewards, setHolderRewards] = useState<boolean | null>(null);
@@ -57,6 +67,21 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
   async function deposit(ev: React.FormEvent) {
     ev.preventDefault();
     if (!parsed || amountError || holderRewards === null) return;
+    if (onchain) {
+      setSending(true);
+      try {
+        if (await sendDeposit(n.id, parsed, holderRewards)) {
+          toast("ok", "You're in the pool");
+          setAmount("");
+          router.refresh();
+        }
+      } catch (err) {
+        toast("err", chainErrorMessage(err));
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
     const out = await run(
       "deposit",
       `/api/narratives/${n.id}/deposit`,
@@ -195,10 +220,32 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
                 100% back if the pool misses {formatSol(min)} SOL or the launch fails.
               </li>
             </ul>
-            <button className="btn-accent mt-3 h-12 w-full text-[0.95rem]" disabled={!parsed || !!amountError || holderRewards === null || busy !== null}>
-              {busy === "deposit" ? "Joining…" : parsed && !amountError && holderRewards === null ? "Vote holder rewards on or off" : "Join the pool"}
-            </button>
-            {n.preview && <p className="mt-2 text-center text-[0.72rem] text-warn/80">Preview build: this deposit is simulated. No SOL leaves your wallet.</p>}
+            {needWallet ? (
+              <button type="button" className="btn-accent mt-3 h-12 w-full text-[0.95rem]" onClick={connect}>
+                Connect a wallet to join
+              </button>
+            ) : (
+              <button className="btn-accent mt-3 h-12 w-full text-[0.95rem]" disabled={!parsed || !!amountError || holderRewards === null || busy !== null || sending}>
+                {busy === "deposit" || sending
+                  ? sending
+                    ? "Confirm in your wallet…"
+                    : "Joining…"
+                  : parsed && !amountError && holderRewards === null
+                    ? "Vote holder rewards on or off"
+                    : "Join the pool"}
+              </button>
+            )}
+            {n.preview ? (
+              <p className="mt-2 text-center text-[0.72rem] text-warn/80">Preview build: this deposit is simulated. No SOL leaves your wallet.</p>
+            ) : (
+              <p className="mt-2 text-center text-[0.72rem] text-warn/80">
+                Devnet: test SOL only. Set your wallet to devnet and get free SOL at{" "}
+                <a className="underline" href="https://faucet.solana.com" target="_blank" rel="noopener noreferrer">
+                  faucet.solana.com
+                </a>
+                .
+              </p>
+            )}
           </form>
         )}
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { config } from "../config";
 import { mockAdapter } from "./mock";
+import { solanaAdapter } from "./solana";
 import type { ChainAdapter } from "./types";
 
 export function chain(): ChainAdapter {
@@ -8,8 +9,7 @@ export function chain(): ChainAdapter {
     case "mock":
       return mockAdapter;
     case "solana":
-      // The Solana adapter ships once programs/narrative_escrow is compiled, tested and on devnet.
-      throw new Error("CHAIN=solana is not available yet: the escrow program has not been deployed");
+      return solanaAdapter;
   }
 }
 

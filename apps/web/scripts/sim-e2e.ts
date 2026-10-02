@@ -81,7 +81,7 @@ async function main() {
   const submit = (w: Wallet, field: any, value: string) => w.signed(`/api/narratives/${id}/submit`, "submit", { narrativeId: id, field, value });
   assert.equal((await submit(carol, "x", "https://x.com/mooncat")).status, 400, "link ballots are off");
   assert.equal((await submit(carol, "fees", "holders")).status, 400, "fees are voted in the pool, not on a ballot");
-  assert.equal((await submit(carol, "pair", "BONK")).status, 400, "pump.fun doesn't accept BONK as a pair");
+  assert.equal((await submit(carol, "pair", "NOTAPAIR")).status, 400, "only pairs pump.fun accepts");
   assert.equal((await submit(carol, "pair", "sol")).status, 409, "SOL is already on the ballot");
   const nvda = await submit(carol, "pair", "nvdax");
   assert.equal(nvda.status, 200, JSON.stringify(nvda.data));
@@ -92,7 +92,7 @@ async function main() {
   assert.ok(n.pairOptions.some((o: any) => o.symbol === "TSLAx" && o.kind === "stock"), "stocks offered");
   assert.ok(n.pairOptions.some((o: any) => o.symbol === "USDC"), "USDC offered");
   assert.ok(!n.pairOptions.some((o: any) => o.symbol === "USD1"), "USD1 is not a pump.fun pair");
-  ok("pair ballot takes only pump.fun pairs (NVDAx added, BONK refused); no link or fee ballots");
+  ok(`pair ballot takes only pump.fun's ${n.pairOptions.length} pairs (NVDAx added, a made-up one refused); no link or fee ballots`);
 
   const fd = new FormData();
   fd.append("file", new Blob([PNG], { type: "image/png" }), "cat.png");

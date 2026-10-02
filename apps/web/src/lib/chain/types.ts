@@ -53,6 +53,9 @@ export interface ChainAdapter {
   claim(narrativeId: string, wallet: string): Promise<TxRef & { tokens: bigint; lamports: bigint }>;
   refund(narrativeId: string, wallet: string): Promise<TxRef & { amount: bigint }>;
   getLaunchStatus(narrativeId: string): Promise<LaunchStatus>;
+  /** solana: refresh the database cache from the chain (accounts + new transactions). The
+   *  chain is the source of truth; mock has nothing to sync. */
+  sync?(narrativeId: string): Promise<void>;
 
   explorer: {
     address(a: string): string | null;
