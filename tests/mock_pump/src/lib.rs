@@ -12,6 +12,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self, CreateAccount, Transfer};
 use anchor_spl::associated_token::{self, Create as CreateAta};
 use anchor_spl::token_2022::{self, InitializeMint2, MintTo, TransferChecked};
+use anchor_spl::token_interface;
 
 declare_id!("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 
@@ -23,6 +24,8 @@ pub const TOKEN_TOTAL_SUPPLY: u64 = 1_000_000_000_000_000;
 pub const DECIMALS: u8 = 6;
 const CURVE_LEN: usize = 126;
 const MODE_OFFSET: usize = 125;
+/// Mock-only: the quote mint of a token-paired curve (zeroes = SOL).
+const QUOTE_MINT_OFFSET: usize = 81;
 
 pub mod mode {
     pub const NORMAL: u8 = 0;
@@ -56,6 +59,7 @@ pub enum MockError {
     Slippage,
     HolderRewardDisabled,
     WrongCreatorVault,
+    WrongQuote,
 }
 
 /// `Global.is_holder_reward_enabled` (idls/pump.json).
@@ -141,6 +145,26 @@ pub mod mock_pump {
             d[MODE_OFFSET] = mode_for(&name);
         }
 
+        // Token pairs, like pump: remaining accounts [quote_mint, associated_quote_bonding_curve,
+        // quote_token_program, (quote-control)]. The mock records the quote mint on the curve and
+        // creates the curve's account for it; none = SOL.
+        let r = ctx.remaining_accounts;
+        if r.len() >= 3 {
+            associated_token::create(CpiContext::new(
+                a.associated_token_program.key(),
+                CreateAta {
+                    payer: a.user.to_account_info(),
+                    associated_token: r[1].clone(),
+                    authority: a.bonding_curve.to_account_info(),
+                    mint: r[0].clone(),
+                    system_program: a.system_program.to_account_info(),
+                    token_program: r[2].clone(),
+                },
+            ))?;
+            let mut d = a.bonding_curve.try_borrow_mut_data()?;
+            d[QUOTE_MINT_OFFSET..QUOTE_MINT_OFFSET + 32].copy_from_slice(r[0].key().as_ref());
+        }
+
         associated_token::create(CpiContext::new(
             a.associated_token_program.key(),
             CreateAta {
@@ -175,11 +199,16 @@ pub mod mock_pump {
         min_tokens_out: u64,
     ) -> Result<()> {
         let a = &ctx.accounts;
-        let (vt, vq, rt, rq, m, curve_creator) = {
+        let (vt, vq, rt, rq, m, curve_creator, quote_mint) = {
             let d = a.bonding_curve.try_borrow_data()?;
             let creator = Pubkey::new_from_array(d[49..81].try_into().unwrap());
-            (get_u64(&d, 8), get_u64(&d, 16), get_u64(&d, 24), get_u64(&d, 32), d[MODE_OFFSET], creator)
+            let quote = Pubkey::new_from_array(d[QUOTE_MINT_OFFSET..QUOTE_MINT_OFFSET + 32].try_into().unwrap());
+            (get_u64(&d, 8), get_u64(&d, 16), get_u64(&d, 24), get_u64(&d, 32), d[MODE_OFFSET], creator, quote)
         };
+        let token_quote = quote_mint != Pubkey::default();
+        if token_quote {
+            require_keys_eq!(a.quote_mint.key(), quote_mint, MockError::WrongQuote);
+        }
         require!(m != mode::FAIL_BUY, MockError::BuyFailed);
         // Like pump: the creator vault must belong to the curve's recorded creator, so a client
         // has to derive it from the holder-rewards PDA when holder rewards are on.
@@ -199,14 +228,35 @@ pub mod mock_pump {
         // `spent <= pool_after_fee` must reject it. A smaller overspend that stays inside the
         // 0.05 SOL launch reserve is allowed by design, and asking for more than the vault holds
         // fails in the System Program before the post-condition ever runs.
-        let take = if m == mode::OVERSPEND { a.user.lamports() } else { spendable_quote_in };
-        system_program::transfer(
-            CpiContext::new(
-                a.system_program.key(),
-                Transfer { from: a.user.to_account_info(), to: a.bonding_curve.to_account_info() },
-            ),
-            take,
-        )?;
+        if token_quote {
+            // Token pair: the quote moves from the buyer's quote account to the curve's. OVERSPEND
+            // takes the buyer's whole balance, which the escrow's post-condition must reject.
+            let balance = get_u64(&a.associated_quote_user.try_borrow_data()?, 64);
+            let take = if m == mode::OVERSPEND { balance } else { spendable_quote_in };
+            let decimals = a.quote_mint.try_borrow_data()?[44];
+            token_interface::transfer_checked(
+                CpiContext::new(
+                    a.quote_token_program.key(),
+                    token_interface::TransferChecked {
+                        from: a.associated_quote_user.to_account_info(),
+                        mint: a.quote_mint.to_account_info(),
+                        to: a.associated_quote_bonding_curve.to_account_info(),
+                        authority: a.user.to_account_info(),
+                    },
+                ),
+                take,
+                decimals,
+            )?;
+        } else {
+            let take = if m == mode::OVERSPEND { a.user.lamports() } else { spendable_quote_in };
+            system_program::transfer(
+                CpiContext::new(
+                    a.system_program.key(),
+                    Transfer { from: a.user.to_account_info(), to: a.bonding_curve.to_account_info() },
+                ),
+                take,
+            )?;
+        }
 
         let send = if m == mode::SHORT { 1 } else { out };
         let mint_key = a.base_mint.key();

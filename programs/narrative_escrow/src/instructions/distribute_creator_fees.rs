@@ -5,7 +5,7 @@ use crate::constants::*;
 use crate::errors::EscrowError;
 use crate::events::CreatorFeesDistributed;
 use crate::math::bps_of;
-use crate::state::{Escrow, HolderVote};
+use crate::state::{Escrow, HolderVote, PoolQuote};
 
 /// Permissionless. Pump pays creator fees to `creator` = our vault (anyone can trigger
 /// `collect_creator_fee_v2`; AMM fees arrive as wSOL and are unwrapped by `sweep_wsol`).
@@ -29,9 +29,14 @@ pub struct DistributeCreatorFees<'info> {
     /// CHECK: the holder-rewards tally at its PDA (D-022); may be empty for old escrows.
     #[account(seeds = [SEED_HOLDER_VOTE, escrow.key().as_ref()], bump)]
     pub holder_vote: UncheckedAccount<'info>,
+    /// CHECK: must be empty. A token-paired coin's creator fees arrive in its token, and SOL
+    /// credited here could only be paid by the SOL `claim`, which token pools can't use (D-023).
+    #[account(seeds = [SEED_POOL_QUOTE, escrow.key().as_ref()], bump)]
+    pub pool_quote: UncheckedAccount<'info>,
 }
 
 pub fn process_distribute_creator_fees(ctx: Context<DistributeCreatorFees>) -> Result<()> {
+    PoolQuote::require_sol_pool(&ctx.accounts.pool_quote.to_account_info())?;
     let escrow_key = ctx.accounts.escrow.key();
     let e = &ctx.accounts.escrow;
     require!(e.launched, EscrowError::NotLaunched);

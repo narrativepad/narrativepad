@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
+use anchor_lang::system_program;
 use anchor_spl::associated_token::{self, Create as CreateAta};
+use anchor_spl::token_interface::{self, TransferChecked};
 
 use super::vault_transfer;
 use crate::constants::*;
@@ -7,13 +9,15 @@ use crate::errors::EscrowError;
 use crate::events::Launched;
 use crate::math::{bps_of, curve_tokens_out, net_of_fee};
 use crate::pump::{self, ra};
-use crate::state::{Escrow, HolderVote, Phase};
+use crate::state::{Escrow, HolderVote, Phase, PoolQuote};
 
 /// Permissionless. Creates the coin on pump.fun with the locked metadata and spends the pool
 /// on the opening buy inside this ONE instruction, so nothing can be ordered between create
 /// and buy (ARCHITECTURE.md §4.3). Must be a top-level instruction (CPI depth).
 ///
-/// Pump's own accounts follow in `remaining_accounts` in the order of `pump::ra`.
+/// Pump's own accounts follow in `remaining_accounts` in the order of `pump::ra`. A token pool
+/// (D-023) adds, after them, the treasury's account for the pool token and, when pump admits
+/// that token through quote-control, the quote-control PDA.
 #[derive(Accounts)]
 #[instruction(mint_nonce: u64)]
 pub struct Launch<'info> {
@@ -59,6 +63,10 @@ pub struct Launch<'info> {
     /// skip the vote; empty for escrows from before D-022 that got no deposit since.
     #[account(mut, seeds = [SEED_HOLDER_VOTE, escrow.key().as_ref()], bump)]
     pub holder_vote: UncheckedAccount<'info>,
+    /// CHECK: the pool's token at its PDA (D-023); empty for SOL pools. Pinned by seeds so a
+    /// cranker can't launch a token pool as a SOL pool or the reverse.
+    #[account(mut, seeds = [SEED_POOL_QUOTE, escrow.key().as_ref()], bump)]
+    pub pool_quote: UncheckedAccount<'info>,
 }
 
 pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64) -> Result<()> {
@@ -77,9 +85,31 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
     // Accounts we read or rely on ourselves. Pump validates the rest of its accounts.
     require_keys_eq!(r[ra::BONDING_CURVE].key(), pump::bonding_curve_address(&mint_key), EscrowError::InvalidAccount);
     require_keys_eq!(r[ra::MAYHEM_PROGRAM].key(), MAYHEM_PROGRAM_ID, EscrowError::InvalidProgram);
-    require_keys_eq!(r[ra::QUOTE_MINT].key(), WSOL_MINT, EscrowError::InvalidAccount);
-    require_keys_eq!(r[ra::QUOTE_TOKEN_PROGRAM].key(), SPL_TOKEN_PROGRAM_ID, EscrowError::InvalidProgram);
     require_keys_eq!(r[ra::FEE_PROGRAM].key(), PUMP_FEE_PROGRAM_ID, EscrowError::InvalidProgram);
+
+    // The pool's currency (D-023): SOL, or the coin's pump quote token held by the vault.
+    let quote = PoolQuote::read(&a.pool_quote.to_account_info())?;
+    if let Some(q) = &quote {
+        require_keys_eq!(r[ra::QUOTE_MINT].key(), q.mint, EscrowError::InvalidAccount);
+        require_keys_eq!(r[ra::QUOTE_TOKEN_PROGRAM].key(), q.token_program, EscrowError::InvalidProgram);
+        require_keys_eq!(
+            r[ra::ASSOCIATED_QUOTE_USER].key(),
+            pump::ata_address(&vault_key, &q.mint, &q.token_program),
+            EscrowError::InvalidAccount
+        );
+        require!(r.len() >= ra::COUNT + 1 + q.via_quote_control as usize, EscrowError::InvalidAccount);
+        require_keys_eq!(
+            r[ra::COUNT].key(),
+            pump::ata_address(&a.escrow.treasury, &q.mint, &q.token_program),
+            EscrowError::InvalidAccount
+        );
+        if q.via_quote_control {
+            require_keys_eq!(r[ra::COUNT + 1].key(), pump::quote_control_address(), EscrowError::InvalidAccount);
+        }
+    } else {
+        require_keys_eq!(r[ra::QUOTE_MINT].key(), WSOL_MINT, EscrowError::InvalidAccount);
+        require_keys_eq!(r[ra::QUOTE_TOKEN_PROGRAM].key(), SPL_TOKEN_PROGRAM_ID, EscrowError::InvalidProgram);
+    }
 
     // Holder rewards (D-022): on only if more SOL voted for them and pump has them enabled;
     // otherwise pump would reject the create and the pool could never launch.
@@ -91,8 +121,9 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
     let total = a.escrow.total_deposited;
     let platform_fee = bps_of(total, a.escrow.fee_bps as u64).ok_or(EscrowError::MathOverflow)?;
     let pool_after_fee = total - platform_fee;
-    let budget = pool_after_fee
-        .checked_sub(LAUNCH_RENT_RESERVE)
+    // A SOL pool keeps a rent reserve back from the buy; a token pool's rents are lent by the
+    // cranker (below), so the whole pool after the fee buys.
+    let budget = if quote.is_some() { Some(pool_after_fee) } else { pool_after_fee.checked_sub(LAUNCH_RENT_RESERVE) }
         .filter(|b| *b > 0)
         .ok_or(EscrowError::PoolTooSmall)?;
 
@@ -106,6 +137,7 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
     let vault_seeds: &[&[u8]] = &[SEED_VAULT, escrow_key.as_ref(), &vault_bump_bytes];
     let mint_seeds: &[&[u8]] = &[SEED_MINT, escrow_key.as_ref(), &nonce_bytes, &mint_bump];
 
+    let cranker = a.cranker.to_account_info();
     let vault = a.vault.to_account_info();
     let mint = a.mint.to_account_info();
     let vault_token_account = a.vault_token_account.to_account_info();
@@ -115,10 +147,51 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
     let pump_program = a.pump_program.to_account_info();
 
     // 1. Platform fee (only ever charged here, on a successful launch).
-    vault_transfer(&a.system_program, &vault, &a.treasury.to_account_info(), &escrow_key, vault_bump, platform_fee)?;
+    let quote_before = if let Some(q) = &quote {
+        // The cranker lends the vault SOL for the launch's rents; the rest comes back in step 7.
+        system_program::transfer(
+            CpiContext::new(system_program.key(), system_program::Transfer { from: cranker.clone(), to: vault.clone() }),
+            TOKEN_LAUNCH_RENT,
+        )?;
+        associated_token::create_idempotent(CpiContext::new(
+            ata_program.key(),
+            CreateAta {
+                payer: cranker.clone(),
+                associated_token: r[ra::COUNT].clone(),
+                authority: a.treasury.to_account_info(),
+                mint: r[ra::QUOTE_MINT].clone(),
+                system_program: system_program.clone(),
+                token_program: r[ra::QUOTE_TOKEN_PROGRAM].clone(),
+            },
+        ))?;
+        token_interface::transfer_checked(
+            CpiContext::new_with_signer(
+                r[ra::QUOTE_TOKEN_PROGRAM].key(),
+                TransferChecked {
+                    from: r[ra::ASSOCIATED_QUOTE_USER].clone(),
+                    mint: r[ra::QUOTE_MINT].clone(),
+                    to: r[ra::COUNT].clone(),
+                    authority: vault.clone(),
+                },
+                &[vault_seeds],
+            ),
+            platform_fee,
+            q.decimals,
+        )?;
+        pump::read_token_account(&r[ra::ASSOCIATED_QUOTE_USER])?.2
+    } else {
+        vault_transfer(&a.system_program, &vault, &a.treasury.to_account_info(), &escrow_key, vault_bump, platform_fee)?;
+        0
+    };
     let lamports_before = vault.lamports();
 
     // 2. Create the coin. creator = vault, so on pump.fun the "dev" is the community escrow.
+    let quote_accounts = quote.as_ref().map(|q| pump::QuoteAccounts {
+        mint: &r[ra::QUOTE_MINT],
+        associated_bonding_curve: &r[ra::ASSOCIATED_QUOTE_BONDING_CURVE],
+        token_program: &r[ra::QUOTE_TOKEN_PROGRAM],
+        quote_control: if q.via_quote_control { Some(&r[ra::COUNT + 1]) } else { None },
+    });
     pump::create_v2(
         &pump::CreateV2Accounts {
             mint: &mint,
@@ -134,6 +207,7 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
         &uri,
         &vault_key,
         holder_rewards,
+        quote_accounts.as_ref(),
         &[vault_seeds, mint_seeds],
     )?;
 
@@ -151,7 +225,7 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
         &[vault_seeds],
     ))?;
 
-    // 4. Bound the opening buy using the fresh curve.
+    // 4. Bound the opening buy using the fresh curve (its reserves are in the pool's currency).
     let curve = pump::read_curve(&r[ra::BONDING_CURVE])?;
     require!(!curve.complete && curve.creator == expected_creator, EscrowError::InvalidBondingCurve);
     let max_out = curve_tokens_out(budget, curve.virtual_token_reserves, curve.virtual_quote_reserves)
@@ -166,7 +240,7 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
     .ok_or(EscrowError::MathOverflow)?;
     require!(min_out > 0, EscrowError::PoolTooSmall);
 
-    // 5. Opening buy, paid by the vault.
+    // 5. Opening buy, paid by the vault (lamports, or the pool token from its account).
     pump::buy_exact_quote_in_v2(
         &pump::BuyAccounts {
             base_mint: &mint,
@@ -187,17 +261,39 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
     let (token_mint, token_owner, tokens) = pump::read_token_account(&vault_token_account)?;
     require!(token_mint == mint_key && token_owner == vault_key, EscrowError::InvalidAccount);
     require!(tokens >= min_out, EscrowError::LaunchUnderfilled);
-    let spent = lamports_before.saturating_sub(vault.lamports());
-    require!(spent <= pool_after_fee, EscrowError::LaunchOverspent);
-    let base_leftover = pool_after_fee - spent;
+    let leftover = if quote.is_some() {
+        let quote_after = pump::read_token_account(&r[ra::ASSOCIATED_QUOTE_USER])?.2;
+        let spent = quote_before.saturating_sub(quote_after);
+        require!(spent <= pool_after_fee, EscrowError::LaunchOverspent);
+        pool_after_fee - spent
+    } else {
+        let spent = lamports_before.saturating_sub(vault.lamports());
+        require!(spent <= pool_after_fee, EscrowError::LaunchOverspent);
+        pool_after_fee - spent
+    };
+
+    // 7. Token pool: return the cranker's unspent SOL. The vault keeps exactly its rent floor,
+    //    so pump can't have used more than was lent without failing the rent check.
+    if quote.is_some() {
+        let floor = Rent::get()?.minimum_balance(0);
+        let back = vault.lamports().saturating_sub(floor);
+        vault_transfer(&ctx.accounts.system_program, &vault, &cranker, &escrow_key, vault_bump, back)?;
+    }
 
     let escrow = &mut ctx.accounts.escrow;
     escrow.launched = true;
     escrow.launched_at = now;
     escrow.mint = mint_key;
     escrow.tokens_bought = tokens;
-    escrow.base_leftover = base_leftover;
+    // SOL pools owe the leftover in lamports (claim); token pools in their token (claim_token).
+    escrow.base_leftover = if quote.is_some() { 0 } else { leftover };
 
+    if let Some(mut q) = quote {
+        q.quote_leftover = leftover;
+        let info = ctx.accounts.pool_quote.to_account_info();
+        let mut data = info.try_borrow_mut_data()?;
+        q.try_serialize(&mut &mut data[..])?;
+    }
     if let Some(mut v) = vote {
         v.applied = holder_rewards;
         let info = ctx.accounts.holder_vote.to_account_info();
@@ -212,7 +308,7 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
         platform_fee,
         buy_budget: budget,
         tokens_bought: tokens,
-        base_leftover,
+        base_leftover: leftover,
         launched_at: now,
         holder_rewards,
         holder_votes_on: votes_on,

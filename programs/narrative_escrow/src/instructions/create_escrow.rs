@@ -1,11 +1,13 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
+use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use crate::constants::*;
 use crate::errors::EscrowError;
 use crate::events::EscrowCreated;
 use crate::math;
-use crate::state::{Config, Escrow, HolderVote};
+use crate::state::{Config, Escrow, HolderVote, PoolQuote};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct CreateEscrowParams {
@@ -57,7 +59,59 @@ pub struct CreateEscrow<'info> {
     pub holder_vote: Box<Account<'info, HolderVote>>,
 }
 
-fn validate(p: &CreateEscrowParams, config: &Config, now: i64) -> Result<()> {
+/// A token pool (D-023): same as `CreateEscrow`, plus the pool's quote token and the vault's
+/// account for it. The operator pays every rent.
+#[derive(Accounts)]
+#[instruction(params: CreateEscrowParams)]
+pub struct CreateTokenEscrow<'info> {
+    #[account(mut)]
+    pub operator: Signer<'info>,
+    #[account(seeds = [SEED_CONFIG], bump = config.bump, has_one = operator)]
+    pub config: Account<'info, Config>,
+    #[account(
+        init,
+        payer = operator,
+        space = 8 + Escrow::INIT_SPACE,
+        seeds = [SEED_ESCROW, params.narrative_id.as_ref()],
+        bump
+    )]
+    pub escrow: Box<Account<'info, Escrow>>,
+    #[account(mut, seeds = [SEED_VAULT, escrow.key().as_ref()], bump)]
+    pub vault: SystemAccount<'info>,
+    pub system_program: Program<'info, System>,
+    #[account(
+        init,
+        payer = operator,
+        space = 8 + HolderVote::INIT_SPACE,
+        seeds = [SEED_HOLDER_VOTE, escrow.key().as_ref()],
+        bump
+    )]
+    pub holder_vote: Box<Account<'info, HolderVote>>,
+    #[account(
+        init,
+        payer = operator,
+        space = 8 + PoolQuote::INIT_SPACE,
+        seeds = [SEED_POOL_QUOTE, escrow.key().as_ref()],
+        bump
+    )]
+    pub pool_quote: Box<Account<'info, PoolQuote>>,
+    #[account(mint::token_program = quote_token_program)]
+    pub quote_mint: Box<InterfaceAccount<'info, Mint>>,
+    #[account(
+        init,
+        payer = operator,
+        associated_token::mint = quote_mint,
+        associated_token::authority = vault,
+        associated_token::token_program = quote_token_program
+    )]
+    pub vault_quote_account: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub quote_token_program: Interface<'info, TokenInterface>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+/// `token_pool`: amounts are in the pool token's units, so the lamport bounds (`max_pool_cap`,
+/// `MIN_POOL_MIN`) don't apply; the launch's curve-overfill check bounds the pool instead.
+fn validate(p: &CreateEscrowParams, config: &Config, now: i64, token_pool: bool) -> Result<()> {
     require!(
         !p.name.is_empty()
             && p.name.len() <= NAME_MAX_LEN
@@ -77,8 +131,8 @@ fn validate(p: &CreateEscrowParams, config: &Config, now: i64) -> Result<()> {
         p.min_deposit > 0
             && p.min_deposit <= p.per_wallet_max
             && p.per_wallet_max <= p.pool_cap
-            && p.pool_cap <= config.max_pool_cap
-            && p.pool_min >= MIN_POOL_MIN
+            && (token_pool || p.pool_cap <= config.max_pool_cap)
+            && p.pool_min >= if token_pool { 1 } else { MIN_POOL_MIN }
             && p.pool_min <= p.pool_cap,
         EscrowError::InvalidLimits
     );
@@ -105,12 +159,69 @@ fn validate(p: &CreateEscrowParams, config: &Config, now: i64) -> Result<()> {
 }
 
 pub fn process_create_escrow(ctx: Context<CreateEscrow>, p: CreateEscrowParams) -> Result<()> {
-    let now = Clock::get()?.unix_timestamp;
-    validate(&p, &ctx.accounts.config, now)?;
+    let a = &mut ctx.accounts;
+    let escrow_key = a.escrow.key();
+    init_escrow(
+        &mut a.escrow,
+        escrow_key,
+        &mut a.holder_vote,
+        &a.config,
+        p,
+        (ctx.bumps.escrow, ctx.bumps.vault, ctx.bumps.holder_vote),
+        &a.operator.to_account_info(),
+        &a.vault.to_account_info(),
+        &a.system_program,
+        false,
+    )
+}
 
-    let config = &ctx.accounts.config;
-    let escrow_key = ctx.accounts.escrow.key();
-    let escrow = &mut ctx.accounts.escrow;
+/// `via_quote_control`: pump admits the mint through its quote-control list (stocks and most
+/// coins) rather than Global's whitelist (USDC), so the launch passes that PDA to `create_v2`.
+pub fn process_create_token_escrow(ctx: Context<CreateTokenEscrow>, p: CreateEscrowParams, via_quote_control: bool) -> Result<()> {
+    let a = &mut ctx.accounts;
+    // SOL pools are the SOL path; Token-2022's native mint isn't accepted by pump.
+    let mint = a.quote_mint.key();
+    require!(mint != WSOL_MINT && mint != TOKEN_2022_NATIVE_MINT, EscrowError::InvalidQuoteMint);
+    let escrow_key = a.escrow.key();
+    let q = &mut a.pool_quote;
+    q.escrow = escrow_key;
+    q.mint = mint;
+    q.token_program = a.quote_token_program.key();
+    q.decimals = a.quote_mint.decimals;
+    q.via_quote_control = via_quote_control;
+    q.bump = ctx.bumps.pool_quote;
+    init_escrow(
+        &mut a.escrow,
+        escrow_key,
+        &mut a.holder_vote,
+        &a.config,
+        p,
+        (ctx.bumps.escrow, ctx.bumps.vault, ctx.bumps.holder_vote),
+        &a.operator.to_account_info(),
+        &a.vault.to_account_info(),
+        &a.system_program,
+        true,
+    )
+}
+
+/// Shared by both pool kinds: validates, freezes the escrow's terms, starts the holder-rewards
+/// tally and tops the vault up to its rent floor (the operator pays).
+#[allow(clippy::too_many_arguments)]
+fn init_escrow<'info>(
+    escrow: &mut Escrow,
+    escrow_key: Pubkey,
+    holder_vote: &mut HolderVote,
+    config: &Config,
+    p: CreateEscrowParams,
+    (escrow_bump, vault_bump, holder_vote_bump): (u8, u8, u8),
+    operator: &AccountInfo<'info>,
+    vault: &AccountInfo<'info>,
+    system_program: &Program<'info, System>,
+    token_pool: bool,
+) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    validate(&p, config, now, token_pool)?;
+
     escrow.narrative_id = p.narrative_id;
     escrow.lock_hash = p.lock_hash;
     escrow.details_hash = p.details_hash;
@@ -133,25 +244,21 @@ pub fn process_create_escrow(ctx: Context<CreateEscrow>, p: CreateEscrowParams) 
     escrow.launch_deadline = p.launch_deadline;
     escrow.tranche_count = p.tranche_count;
     escrow.tranche_interval = p.tranche_interval;
-    escrow.bump = ctx.bumps.escrow;
-    escrow.vault_bump = ctx.bumps.vault;
+    escrow.bump = escrow_bump;
+    escrow.vault_bump = vault_bump;
 
-    let holder_vote = &mut ctx.accounts.holder_vote;
     holder_vote.escrow = escrow_key;
-    holder_vote.bump = ctx.bumps.holder_vote;
+    holder_vote.bump = holder_vote_bump;
 
     // The vault must stay rent-exempt for its whole life (pump also requires its payer to
     // end rent-exempt). Top it up to the floor; the operator pays.
     let rent_floor = Rent::get()?.minimum_balance(0);
-    let have = ctx.accounts.vault.lamports();
+    let have = vault.lamports();
     if have < rent_floor {
         system_program::transfer(
             CpiContext::new(
-                ctx.accounts.system_program.key(),
-                system_program::Transfer {
-                    from: ctx.accounts.operator.to_account_info(),
-                    to: ctx.accounts.vault.to_account_info(),
-                },
+                system_program.key(),
+                system_program::Transfer { from: operator.clone(), to: vault.clone() },
             ),
             rent_floor - have,
         )?;

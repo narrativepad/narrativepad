@@ -5,6 +5,9 @@
 //!   (b) `launch`                       → pump.fun (pinned program id), bounded by post-checks
 //!   (c) `launch`                       → treasury, exactly `fee_bps` of the pool (≤ 2%)
 //!   (d) `distribute_creator_fees`      → creator-fee income only, split frozen at creation
+//! Token pools (D-023) hold the coin's pump quote token instead of SOL and follow the same
+//! rules through `deposit_token` / `refund_token` / `claim_token`; the SOL instructions refuse
+//! them, and the reverse.
 //! There is no admin withdraw and no instruction that takes a destination from the caller.
 
 use anchor_lang::prelude::*;
@@ -41,12 +44,28 @@ pub mod narrative_escrow {
         instructions::create_escrow::process_create_escrow(ctx, params)
     }
 
+    pub fn create_token_escrow(
+        ctx: Context<CreateTokenEscrow>,
+        params: CreateEscrowParams,
+        via_quote_control: bool,
+    ) -> Result<()> {
+        instructions::create_escrow::process_create_token_escrow(ctx, params, via_quote_control)
+    }
+
     pub fn deposit(ctx: Context<Deposit>, amount: u64, holder_rewards: bool) -> Result<()> {
         instructions::deposit::process_deposit(ctx, amount, holder_rewards)
     }
 
+    pub fn deposit_token(ctx: Context<DepositToken>, amount: u64, holder_rewards: bool) -> Result<()> {
+        instructions::deposit::process_deposit_token(ctx, amount, holder_rewards)
+    }
+
     pub fn refund(ctx: Context<Refund>) -> Result<()> {
         instructions::refund::process_refund(ctx)
+    }
+
+    pub fn refund_token(ctx: Context<RefundToken>) -> Result<()> {
+        instructions::refund::process_refund_token(ctx)
     }
 
     pub fn launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64) -> Result<()> {
@@ -55,6 +74,10 @@ pub mod narrative_escrow {
 
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
         instructions::claim::process_claim(ctx)
+    }
+
+    pub fn claim_token(ctx: Context<ClaimToken>) -> Result<()> {
+        instructions::claim::process_claim_token(ctx)
     }
 
     pub fn distribute_creator_fees(ctx: Context<DistributeCreatorFees>) -> Result<()> {

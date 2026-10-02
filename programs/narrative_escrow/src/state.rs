@@ -156,6 +156,44 @@ impl HolderVote {
     }
 }
 
+/// A token pool (D-023): the pool is denominated in `mint`, the coin's pump quote token, held by
+/// the vault's associated token account. `Escrow` amounts (deposits, caps, refunds, tokens owed)
+/// are then in `mint` base units. Escrows without this account are SOL pools.
+#[account]
+#[derive(InitSpace)]
+pub struct PoolQuote {
+    pub escrow: Pubkey,
+    pub mint: Pubkey,
+    pub token_program: Pubkey,
+    pub decimals: u8,
+    /// pump admits `mint` through its quote-control list rather than Global's whitelist, so
+    /// `create_v2` also needs the quote-control PDA.
+    pub via_quote_control: bool,
+    /// Quote tokens the launch didn't spend; owed to depositors pro-rata via `claim_token`.
+    pub quote_leftover: u64,
+    pub quote_leftover_claimed: u64,
+    pub bump: u8,
+}
+
+impl PoolQuote {
+    /// Reads the account behind an address checked by seeds; `None` means a SOL pool.
+    pub fn read(info: &AccountInfo) -> Result<Option<PoolQuote>> {
+        if info.data_is_empty() {
+            return Ok(None);
+        }
+        require_keys_eq!(*info.owner, crate::ID, crate::errors::EscrowError::InvalidAccount);
+        let data = info.try_borrow_data()?;
+        Ok(Some(PoolQuote::try_deserialize(&mut &data[..])?))
+    }
+
+    /// SOL-only instructions take the PDA unchecked and call this, so a token pool's units can
+    /// never be paid out as lamports (or the reverse).
+    pub fn require_sol_pool(info: &AccountInfo) -> Result<()> {
+        require!(info.data_is_empty(), crate::errors::EscrowError::TokenPool);
+        Ok(())
+    }
+}
+
 /// One per (escrow, depositor wallet). Every individual deposit is also emitted as an event
 /// with its own order index; this account aggregates them.
 #[account]

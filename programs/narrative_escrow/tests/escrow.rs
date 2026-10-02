@@ -7,6 +7,7 @@
 //!   rounding dust ........... rounding_dust_is_bounded_and_burnable
 //!   signer / PDA checks ..... *_rejects_* tests
 //!   holder rewards (D-022) .. holder_* tests
+//!   token pools (D-023) ..... token_pool* tests
 mod common;
 
 use anchor_lang::error::ErrorCode as Anchor;
@@ -742,6 +743,155 @@ fn holder_rewards_send_all_vault_income_to_depositors() {
     assert_eq!(env.lamports(&proposer), p0, "no proposer share");
     assert_eq!(env.lamports(&treasury), t0, "no platform share");
     assert_eq!(env.escrow(&escrow).creator_fees_depositors_total, SOL);
+}
+
+// ---- token pools (D-023) --------------------------------------------------------------------
+
+/// A token pool's depositor: some SOL for fees and rent, plus `tokens` of the pool token.
+fn token_holder(env: &mut Env, mint: &Pubkey, tokens: u64) -> Keypair {
+    let w = env.funded(1);
+    env.fund_token(&w.pubkey(), mint, tokens);
+    w
+}
+
+#[test]
+fn token_pool_deposits_launches_and_claims_in_the_token() {
+    let mut env = Env::new();
+    let usdc = env.create_spl_mint(6);
+    let escrow = env.create_token_default("UsdcPool", &usdc, false);
+    let q = env.pool_quote(&escrow).expect("pool_quote");
+    assert_eq!((q.mint, q.decimals, q.via_quote_control), (usdc, 6, false));
+    // spec() limits (per wallet 5e9, cap 20e9, min 1e9) are read as USDC base units here.
+    let a = token_holder(&mut env, &usdc, 10 * SOL);
+    let b = token_holder(&mut env, &usdc, 10 * SOL);
+    ok(env.deposit_token(&a, &escrow, &usdc, 2 * SOL, true));
+    ok(env.deposit_token(&b, &escrow, &usdc, 3 * SOL, false));
+    let vault = vault_pda(&escrow);
+    assert_eq!(env.token_balance(&spl_ata(&vault, &usdc)), 5 * SOL);
+    assert_eq!(env.token_balance(&spl_ata(&a.pubkey(), &usdc)), 8 * SOL);
+    assert_eq!(env.holder_vote(&escrow).unwrap().on, 2 * SOL, "votes count in the pool's token");
+    expect_err(env.deposit(&a, &escrow, SOL), code(E::TokenPool));
+
+    env.set_time(T0 + 720);
+    let crank = env.funded(1);
+    let (crank0, vault_sol0) = (env.lamports(&crank.pubkey()), env.lamports(&vault));
+    let treasury = env.treasury;
+    ok(env.launch(&crank, &escrow, 1));
+    let e = env.escrow(&escrow);
+    let mint = mint_pda(&escrow, 1);
+    let total = 5 * SOL;
+    let fee = total / 100;
+    assert!(e.launched);
+    assert_eq!(env.token_balance(&spl_ata(&treasury, &usdc)), fee, "1% fee, paid in the pool token");
+    // The whole pool after the fee buys: no SOL rent reserve is held back from a token pool.
+    let budget = total - fee;
+    let net = math::mul_div_floor(budget - 1, 10_000, 10_125).unwrap();
+    assert_eq!(e.tokens_bought, math::curve_tokens_out(net, 1_073_000_000_000_000, 30_000_000_000).unwrap());
+    let curve = narrative_escrow::pump::bonding_curve_address(&mint);
+    assert_eq!(env.token_balance(&spl_ata(&curve, &usdc)), budget, "the curve received the pool's USDC");
+    assert_eq!(env.token_balance(&spl_ata(&vault, &usdc)), 0);
+    assert_eq!(env.pool_quote(&escrow).unwrap().quote_leftover, 0);
+    assert_eq!(e.base_leftover, 0, "no lamports are owed to a token pool's depositors");
+    // The cranker's loan came back minus the rents used; the vault is back at its floor.
+    assert_eq!(env.lamports(&vault), vault_sol0);
+    assert!(crank0 - env.lamports(&crank.pubkey()) < TOKEN_LAUNCH_RENT);
+
+    // The SOL claim refuses a token pool; claim_token pays the coin.
+    expect_err(env.claim(&a, &escrow, &mint), code(E::TokenPool));
+    env.set_time(e.launched_at + 10 * 600);
+    ok(env.send(&[claim_token_ix(&a.pubkey(), &escrow, &a.pubkey(), &mint, &usdc)], &a, &[]));
+    let want = math::pro_rata(e.tokens_bought, 2 * SOL, total).unwrap();
+    assert_eq!(env.token_balance(&t22_ata(&a.pubkey(), &mint)), want);
+    expect_err(
+        env.send(&[claim_token_ix(&a.pubkey(), &escrow, &a.pubkey(), &mint, &usdc)], &a, &[]),
+        code(E::NothingToClaim),
+    );
+}
+
+#[test]
+fn token_pool_refunds_in_the_token_even_to_a_closed_account() {
+    let mut env = Env::new();
+    let usdc = env.create_spl_mint(6);
+    let escrow = env.create_token_default("UsdcRefund", &usdc, false);
+    let a = token_holder(&mut env, &usdc, 10 * SOL);
+    ok(env.deposit_token(&a, &escrow, &usdc, SOL / 2, true)); // under the 1e9 minimum
+    env.set_time(T0 + 600);
+    let crank = env.funded(1);
+    expect_err(env.send(&[refund_ix(&escrow, &a.pubkey())], &crank, &[]), code(E::TokenPool));
+
+    // The depositor closed their token account: the refund recreates it at the caller's cost.
+    env.remove_account(&spl_ata(&a.pubkey(), &usdc));
+    ok(env.send(&[refund_token_ix(&crank.pubkey(), &escrow, &a.pubkey(), &usdc)], &crank, &[]));
+    assert_eq!(env.token_balance(&spl_ata(&a.pubkey(), &usdc)), SOL / 2, "100% back, in the token");
+    assert_eq!(env.token_balance(&spl_ata(&vault_pda(&escrow), &usdc)), 0);
+    assert!(!env.exists(&receipt_pda(&escrow, &a.pubkey())), "receipt closed to the depositor");
+    expect_err(
+        env.send(&[refund_token_ix(&crank.pubkey(), &escrow, &a.pubkey(), &usdc)], &crank, &[]),
+        anchor(Anchor::AccountNotInitialized),
+    );
+}
+
+#[test]
+fn token_pools_and_sol_pools_never_mix() {
+    let mut env = Env::new();
+    let usdc = env.create_spl_mint(6);
+    let a = token_holder(&mut env, &usdc, 10 * SOL);
+
+    // A token deposit into a SOL pool: there is no pool token to match.
+    let sol_pool = env.create_default("SolPool");
+    expect_err(env.deposit_token(&a, &sol_pool, &usdc, SOL, false), anchor(Anchor::AccountNotInitialized));
+
+    // WSOL as a pool token: SOL pools are the SOL path.
+    env.set_spl_mint(WSOL_MINT, 9);
+    let p = env.spec("WsolPool");
+    let op = env.operator.insecure_clone();
+    expect_err(env.send(&[create_token_escrow_ix(&op.pubkey(), p, &WSOL_MINT, false)], &op, &[]), code(E::InvalidQuoteMint));
+
+    // A token pool launched with SOL's quote accounts, or without the treasury's token account.
+    let escrow = env.create_token_default("Crossed", &usdc, false);
+    ok(env.deposit_token(&a, &escrow, &usdc, 3 * SOL, false));
+    env.set_time(T0 + 720);
+    let crank = env.funded(1);
+    let treasury = env.treasury;
+    let as_sol = launch_ix(&crank.pubkey(), &escrow, &treasury, 1, None);
+    expect_err(env.send(&[as_sol], &crank, &[]), code(E::InvalidAccount));
+    let mut no_fee_account = launch_token_ix(&crank.pubkey(), &escrow, &treasury, 1, false, &usdc, false);
+    no_fee_account.accounts.pop();
+    expect_err(env.send(&[no_fee_account], &crank, &[]), code(E::InvalidAccount));
+    ok(env.launch(&crank, &escrow, 1));
+}
+
+#[test]
+fn token_pool_overspend_is_rejected() {
+    let mut env = Env::new();
+    let usdc = env.create_spl_mint(6);
+    let escrow = env.create_token_default("OVERSPEND usdc", &usdc, false);
+    let a = token_holder(&mut env, &usdc, 10 * SOL);
+    ok(env.deposit_token(&a, &escrow, &usdc, 3 * SOL, false));
+    // Extra tokens land in the vault; the hostile venue then takes everything it holds.
+    env.fund_token(&vault_pda(&escrow), &usdc, SOL);
+    env.set_time(T0 + 720);
+    let crank = env.funded(1);
+    expect_err(env.launch(&crank, &escrow, 1), code(E::LaunchOverspent));
+    assert!(!env.escrow(&escrow).launched);
+}
+
+#[test]
+fn token_pool_via_quote_control_passes_pumps_list() {
+    let mut env = Env::new();
+    let stock = env.create_spl_mint(8);
+    let escrow = env.create_token_default("NvdaPool", &stock, true);
+    let a = token_holder(&mut env, &stock, 10 * SOL);
+    ok(env.deposit_token(&a, &escrow, &stock, 3 * SOL, true));
+    env.set_time(T0 + 720);
+    let crank = env.funded(1);
+    let treasury = env.treasury;
+    let holder = env.expects_holder_rewards(&escrow);
+    let mut missing = launch_token_ix(&crank.pubkey(), &escrow, &treasury, 1, holder, &stock, true);
+    missing.accounts.pop();
+    expect_err(env.send(&[missing], &crank, &[]), code(E::InvalidAccount));
+    ok(env.launch(&crank, &escrow, 1));
+    assert!(env.holder_vote(&escrow).unwrap().applied, "holder rewards work on token pairs too");
 }
 
 #[test]

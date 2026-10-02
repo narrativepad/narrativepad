@@ -58,4 +58,13 @@ pub enum EscrowError {
     NotDust,
     #[msg("Arithmetic overflow")]
     MathOverflow,
+    // ---- D-023 token pools (appended: existing codes keep their numbers) ----
+    #[msg("This pool holds a token; use the token version of this instruction")]
+    TokenPool,
+    #[msg("This pool holds SOL; use the SOL version of this instruction")]
+    NotATokenPool,
+    #[msg("Quote mint not allowed for a token pool")]
+    InvalidQuoteMint,
+    #[msg("The vault received a different amount than was sent")]
+    TransferAmountMismatch,
 }

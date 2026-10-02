@@ -20,7 +20,7 @@ use solana_transaction_error::TransactionError;
 
 use narrative_escrow::constants::*;
 use narrative_escrow::instructions::{ConfigParams, CreateEscrowParams};
-use narrative_escrow::state::{Config, Escrow, HolderVote, Receipt};
+use narrative_escrow::state::{Config, Escrow, HolderVote, PoolQuote, Receipt};
 use solana_account::Account;
 use narrative_escrow::{self as ne, math, pump};
 
@@ -248,8 +248,67 @@ impl Env {
 
     pub fn launch(&mut self, cranker: &Keypair, escrow: &Pubkey, nonce: u64) -> TxResult {
         let holder = self.expects_holder_rewards(escrow);
-        let ix = launch_ix_with(&cranker.pubkey(), escrow, &self.treasury, nonce, None, holder);
+        let ix = match self.pool_quote(escrow) {
+            Some(q) => launch_token_ix(&cranker.pubkey(), escrow, &self.treasury, nonce, holder, &q.mint, q.via_quote_control),
+            None => launch_ix_with(&cranker.pubkey(), escrow, &self.treasury, nonce, None, holder),
+        };
         self.send(&[ix], cranker, &[])
+    }
+
+    // ---- token pools (D-023) ------------------------------------------------------------------
+
+    /// An SPL Token mint written straight into the SVM (no mint authority needed).
+    pub fn create_spl_mint(&mut self, decimals: u8) -> Pubkey {
+        let mint = Keypair::new().pubkey();
+        self.set_spl_mint(mint, decimals);
+        mint
+    }
+
+    pub fn set_spl_mint(&mut self, address: Pubkey, decimals: u8) {
+        let mut data = vec![0u8; 82];
+        data[44] = decimals;
+        data[45] = 1; // initialized
+        let lamports = self.svm.minimum_balance_for_rent_exemption(82);
+        self.svm
+            .set_account(address, Account { lamports, data, owner: SPL_TOKEN_PROGRAM_ID, executable: false, rent_epoch: 0 })
+            .unwrap();
+    }
+
+    /// Adds `amount` to `owner`'s associated token account for `mint`, creating it if needed.
+    pub fn fund_token(&mut self, owner: &Pubkey, mint: &Pubkey, amount: u64) -> Pubkey {
+        let ata = spl_ata(owner, mint);
+        let have = self.svm.get_account(&ata).filter(|a| a.data.len() == 165).map(|a| u64::from_le_bytes(a.data[64..72].try_into().unwrap()));
+        let mut data = vec![0u8; 165];
+        data[0..32].copy_from_slice(mint.as_ref());
+        data[32..64].copy_from_slice(owner.as_ref());
+        data[64..72].copy_from_slice(&(have.unwrap_or(0) + amount).to_le_bytes());
+        data[108] = 1; // AccountState::Initialized
+        let lamports = self.svm.minimum_balance_for_rent_exemption(165);
+        self.svm
+            .set_account(ata, Account { lamports, data, owner: SPL_TOKEN_PROGRAM_ID, executable: false, rent_epoch: 0 })
+            .unwrap();
+        ata
+    }
+
+    pub fn pool_quote(&self, escrow: &Pubkey) -> Option<PoolQuote> {
+        let acc = self.svm.get_account(&pool_quote_pda(escrow))?;
+        if acc.data.is_empty() {
+            return None;
+        }
+        Some(PoolQuote::try_deserialize(&mut acc.data.as_slice()).unwrap())
+    }
+
+    /// A token pool from `spec(name)`: its amounts are read as `quote_mint` base units.
+    pub fn create_token_default(&mut self, name: &str, quote_mint: &Pubkey, via_quote_control: bool) -> Pubkey {
+        let p = self.spec(name);
+        let id = p.narrative_id;
+        let op = self.operator.insecure_clone();
+        ok(self.send(&[create_token_escrow_ix(&op.pubkey(), p, quote_mint, via_quote_control)], &op, &[]));
+        escrow_pda(&id)
+    }
+
+    pub fn deposit_token(&mut self, who: &Keypair, escrow: &Pubkey, quote_mint: &Pubkey, amount: u64, holder_rewards: bool) -> TxResult {
+        self.send(&[deposit_token_ix(&who.pubkey(), escrow, quote_mint, amount, holder_rewards)], who, &[])
     }
 
     /// One depositor per amount, clock moved to `launch_after`, launched with nonce 1.
@@ -329,6 +388,12 @@ pub fn t22_ata(owner: &Pubkey, mint: &Pubkey) -> Pubkey {
 }
 pub fn holder_vote_pda(escrow: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[SEED_HOLDER_VOTE, escrow.as_ref()], &ne::ID).0
+}
+pub fn pool_quote_pda(escrow: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[SEED_POOL_QUOTE, escrow.as_ref()], &ne::ID).0
+}
+pub fn spl_ata(owner: &Pubkey, mint: &Pubkey) -> Pubkey {
+    pump::ata_address(owner, mint, &SPL_TOKEN_PROGRAM_ID)
 }
 pub fn holder_rewards_pda(mint: &Pubkey) -> Pubkey {
     pump::holder_rewards_address(mint)
@@ -412,6 +477,7 @@ pub fn deposit_ix_raw(depositor: &Pubkey, escrow: &Pubkey, vault: &Pubkey, holde
             receipt: receipt_pda(escrow, depositor),
             system_program: anchor_lang::system_program::ID,
             holder_vote: *holder_vote,
+            pool_quote: pool_quote_pda(escrow),
         }
         .to_account_metas(None),
         data: ne::instruction::Deposit { amount, holder_rewards }.data(),
@@ -431,6 +497,7 @@ pub fn refund_ix_raw(escrow: &Pubkey, receipt: &Pubkey, wallet: &Pubkey) -> Inst
             receipt: *receipt,
             wallet: *wallet,
             system_program: anchor_lang::system_program::ID,
+            pool_quote: pool_quote_pda(escrow),
         }
         .to_account_metas(None),
         data: ne::instruction::Refund {}.data(),
@@ -449,6 +516,7 @@ pub struct LaunchAccounts {
     pub token_program: Pubkey,
     pub associated_token_program: Pubkey,
     pub holder_vote: Pubkey,
+    pub pool_quote: Pubkey,
 }
 
 pub fn launch_accounts(cranker: &Pubkey, escrow: &Pubkey, treasury: &Pubkey, nonce: u64) -> LaunchAccounts {
@@ -466,6 +534,7 @@ pub fn launch_accounts(cranker: &Pubkey, escrow: &Pubkey, treasury: &Pubkey, non
         token_program: TOKEN_2022_PROGRAM_ID,
         associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
         holder_vote: holder_vote_pda(escrow),
+        pool_quote: pool_quote_pda(escrow),
     }
 }
 
@@ -483,6 +552,7 @@ pub fn launch_ix_from(a: &LaunchAccounts, nonce: u64, remaining: Vec<AccountMeta
         associated_token_program: a.associated_token_program,
         system_program: anchor_lang::system_program::ID,
         holder_vote: a.holder_vote,
+        pool_quote: a.pool_quote,
     }
     .to_account_metas(None);
     accounts.extend(remaining);
@@ -528,12 +598,18 @@ pub fn launch_remaining(vault: &Pubkey, mint: &Pubkey) -> Vec<AccountMeta> {
 /// pump's accounts in `pump::ra` order (same flags as the real IDL). `creator` is who pump
 /// records as the coin's creator: the vault, or the holder-rewards PDA (D-022).
 pub fn launch_remaining_for(vault: &Pubkey, mint: &Pubkey, creator: &Pubkey) -> Vec<AccountMeta> {
+    launch_remaining_quote(vault, mint, creator, &WSOL_MINT)
+}
+
+/// As `launch_remaining_for`, with the quote accounts of `quote_mint` (an SPL Token mint for
+/// token pools, D-023; WSOL for SOL pools).
+pub fn launch_remaining_quote(vault: &Pubkey, mint: &Pubkey, creator: &Pubkey, quote_mint: &Pubkey) -> Vec<AccountMeta> {
     let pda = |seeds: &[&[u8]], program: &Pubkey| Pubkey::find_program_address(seeds, program).0;
     let w = |k: Pubkey| AccountMeta::new(k, false);
     let r = |k: Pubkey| AccountMeta::new_readonly(k, false);
     let t22 = TOKEN_2022_PROGRAM_ID;
     let spl = SPL_TOKEN_PROGRAM_ID;
-    let wsol_ata = |owner: &Pubkey| pump::ata_address(owner, &WSOL_MINT, &spl);
+    let wsol_ata = |owner: &Pubkey| pump::ata_address(owner, quote_mint, &spl);
 
     let bonding_curve = pda(&[b"bonding-curve", mint.as_ref()], &PUMP_PROGRAM_ID);
     let sol_vault = pda(&[b"sol-vault"], &MAYHEM_PROGRAM_ID);
@@ -551,7 +627,7 @@ pub fn launch_remaining_for(vault: &Pubkey, mint: &Pubkey, creator: &Pubkey) -> 
         w(pda(&[b"mayhem-state", mint.as_ref()], &MAYHEM_PROGRAM_ID)),
         w(pump::ata_address(&sol_vault, mint, &t22)),
         r(pda(&[b"__event_authority"], &PUMP_PROGRAM_ID)),
-        r(WSOL_MINT),
+        r(*quote_mint),
         r(spl),
         w(FEE_RECIPIENT),
         w(wsol_ata(&FEE_RECIPIENT)),
@@ -588,6 +664,7 @@ pub fn claim_ix(caller: &Pubkey, escrow: &Pubkey, wallet: &Pubkey, mint: &Pubkey
             token_program: TOKEN_2022_PROGRAM_ID,
             associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
             system_program: anchor_lang::system_program::ID,
+            pool_quote: pool_quote_pda(escrow),
         }
         .to_account_metas(None),
         data: ne::instruction::Claim {}.data(),
@@ -604,10 +681,129 @@ pub fn distribute_ix(escrow: &Pubkey, proposer: &Pubkey, treasury: &Pubkey) -> I
             treasury: *treasury,
             system_program: anchor_lang::system_program::ID,
             holder_vote: holder_vote_pda(escrow),
+            pool_quote: pool_quote_pda(escrow),
         }
         .to_account_metas(None),
         data: ne::instruction::DistributeCreatorFees {}.data(),
     }
+}
+
+// ---- token pools (D-023) --------------------------------------------------------------------
+
+pub fn create_token_escrow_ix(operator: &Pubkey, params: CreateEscrowParams, quote_mint: &Pubkey, via_quote_control: bool) -> Instruction {
+    let escrow = escrow_pda(&params.narrative_id);
+    let vault = vault_pda(&escrow);
+    Instruction {
+        program_id: ne::ID,
+        accounts: ne::accounts::CreateTokenEscrow {
+            operator: *operator,
+            config: config_pda(),
+            escrow,
+            vault,
+            system_program: anchor_lang::system_program::ID,
+            holder_vote: holder_vote_pda(&escrow),
+            pool_quote: pool_quote_pda(&escrow),
+            quote_mint: *quote_mint,
+            vault_quote_account: spl_ata(&vault, quote_mint),
+            quote_token_program: SPL_TOKEN_PROGRAM_ID,
+            associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
+        }
+        .to_account_metas(None),
+        data: ne::instruction::CreateTokenEscrow { params, via_quote_control }.data(),
+    }
+}
+
+pub fn deposit_token_ix(depositor: &Pubkey, escrow: &Pubkey, quote_mint: &Pubkey, amount: u64, holder_rewards: bool) -> Instruction {
+    let vault = vault_pda(escrow);
+    Instruction {
+        program_id: ne::ID,
+        accounts: ne::accounts::DepositToken {
+            depositor: *depositor,
+            escrow: *escrow,
+            vault,
+            receipt: receipt_pda(escrow, depositor),
+            system_program: anchor_lang::system_program::ID,
+            holder_vote: holder_vote_pda(escrow),
+            pool_quote: pool_quote_pda(escrow),
+            quote_mint: *quote_mint,
+            depositor_quote_account: spl_ata(depositor, quote_mint),
+            vault_quote_account: spl_ata(&vault, quote_mint),
+            token_program: SPL_TOKEN_PROGRAM_ID,
+        }
+        .to_account_metas(None),
+        data: ne::instruction::DepositToken { amount, holder_rewards }.data(),
+    }
+}
+
+pub fn refund_token_ix(caller: &Pubkey, escrow: &Pubkey, wallet: &Pubkey, quote_mint: &Pubkey) -> Instruction {
+    let vault = vault_pda(escrow);
+    Instruction {
+        program_id: ne::ID,
+        accounts: ne::accounts::RefundToken {
+            caller: *caller,
+            escrow: *escrow,
+            vault,
+            receipt: receipt_pda(escrow, wallet),
+            wallet: *wallet,
+            pool_quote: pool_quote_pda(escrow),
+            quote_mint: *quote_mint,
+            vault_quote_account: spl_ata(&vault, quote_mint),
+            wallet_quote_account: spl_ata(wallet, quote_mint),
+            token_program: SPL_TOKEN_PROGRAM_ID,
+            associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+        data: ne::instruction::RefundToken {}.data(),
+    }
+}
+
+pub fn claim_token_ix(caller: &Pubkey, escrow: &Pubkey, wallet: &Pubkey, mint: &Pubkey, quote_mint: &Pubkey) -> Instruction {
+    let vault = vault_pda(escrow);
+    Instruction {
+        program_id: ne::ID,
+        accounts: ne::accounts::ClaimToken {
+            caller: *caller,
+            escrow: *escrow,
+            vault,
+            receipt: receipt_pda(escrow, wallet),
+            wallet: *wallet,
+            mint: *mint,
+            vault_token_account: t22_ata(&vault, mint),
+            wallet_token_account: t22_ata(wallet, mint),
+            token_program: TOKEN_2022_PROGRAM_ID,
+            pool_quote: pool_quote_pda(escrow),
+            quote_mint: *quote_mint,
+            vault_quote_account: spl_ata(&vault, quote_mint),
+            wallet_quote_account: spl_ata(wallet, quote_mint),
+            quote_token_program: SPL_TOKEN_PROGRAM_ID,
+            associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+        data: ne::instruction::ClaimToken {}.data(),
+    }
+}
+
+/// A token pool's launch: pump's accounts with `quote_mint`'s quote accounts, then the treasury's
+/// account for the fee and, if pump admits the mint through quote-control, that PDA.
+pub fn launch_token_ix(
+    cranker: &Pubkey,
+    escrow: &Pubkey,
+    treasury: &Pubkey,
+    nonce: u64,
+    holder_rewards: bool,
+    quote_mint: &Pubkey,
+    via_quote_control: bool,
+) -> Instruction {
+    let a = launch_accounts(cranker, escrow, treasury, nonce);
+    let creator = if holder_rewards { holder_rewards_pda(&a.mint) } else { a.vault };
+    let mut remaining = launch_remaining_quote(&a.vault, &a.mint, &creator, quote_mint);
+    remaining.push(AccountMeta::new(spl_ata(treasury, quote_mint), false));
+    if via_quote_control {
+        remaining.push(AccountMeta::new_readonly(pump::quote_control_address(), false));
+    }
+    launch_ix_from(&a, nonce, remaining)
 }
 
 pub fn burn_dust_ix(escrow: &Pubkey, mint: &Pubkey) -> Instruction {

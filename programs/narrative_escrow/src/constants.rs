@@ -9,6 +9,8 @@ pub const SEED_MINT: &[u8] = b"mint";
 /// Per-escrow holder-rewards tally (D-022). Its own account, so escrows created before it keep
 /// their layout.
 pub const SEED_HOLDER_VOTE: &[u8] = b"holder_vote";
+/// Token pools (D-023): the coin's pump quote token, held by the vault's ATA. No account = SOL pool.
+pub const SEED_POOL_QUOTE: &[u8] = b"pool_quote";
 
 // ---- Fees ---------------------------------------------------------------------------------
 pub const BPS_DENOMINATOR: u64 = 10_000;
@@ -19,6 +21,9 @@ pub const MAX_FEE_BPS: u16 = 200;
 /// Lamports held back from the opening buy to pay rent for the accounts pump creates
 /// (mint, bonding curve, ATAs, volume accumulator). Unspent remainder is refunded pro-rata.
 pub const LAUNCH_RENT_RESERVE: u64 = 50_000_000; // 0.05 SOL
+/// Token pools hold no SOL, so the cranker lends the vault this much for the launch's rents and
+/// gets the unspent part back in the same instruction (D-023).
+pub const TOKEN_LAUNCH_RENT: u64 = 50_000_000; // 0.05 SOL
 /// Worst-case pump fee we assume when computing `min_tokens_out`. Pump charges 125 bps
 /// today; if it ever charges more than this the launch reverts and the escrow refunds.
 pub const MAX_ASSUMED_PUMP_FEE_BPS: u64 = 300;
@@ -53,6 +58,8 @@ pub const SPL_TOKEN_PROGRAM_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuB
 pub const ASSOCIATED_TOKEN_PROGRAM_ID: Pubkey =
     pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 pub const WSOL_MINT: Pubkey = pubkey!("So11111111111111111111111111111111111111112");
+/// Token-2022's native mint; pump rejects it as a quote.
+pub const TOKEN_2022_NATIVE_MINT: Pubkey = pubkey!("9pan9bMn5HatX4EJdBwg9VgCa7Uz5HL8N1m5D3NdXejP");
 
 // pump instruction discriminators (Anchor sighash; verified against idls/pump.json in tests)
 pub const PUMP_IX_CREATE_V2: [u8; 8] = [214, 144, 76, 236, 95, 139, 49, 180];

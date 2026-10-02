@@ -101,6 +101,21 @@ pub fn holder_rewards_enabled(global: &AccountInfo) -> Result<bool> {
     Ok(data.len() > PUMP_GLOBAL_HOLDER_REWARD_FLAG_OFFSET && data[PUMP_GLOBAL_HOLDER_REWARD_FLAG_OFFSET] != 0)
 }
 
+/// pump's list of quote mints admitted outside Global's whitelist: `["quote-control"]`.
+pub fn quote_control_address() -> Pubkey {
+    Pubkey::find_program_address(&[b"quote-control"], &PUMP_PROGRAM_ID).0
+}
+
+/// The remaining accounts that make `create_v2` create a token-paired coin (D-023): the quote
+/// mint, the curve's account for it, its token program, and the quote-control PDA when the
+/// mint isn't in Global's whitelist. Omitted entirely for SOL.
+pub struct QuoteAccounts<'a, 'info> {
+    pub mint: &'a AccountInfo<'info>,
+    pub associated_bonding_curve: &'a AccountInfo<'info>,
+    pub token_program: &'a AccountInfo<'info>,
+    pub quote_control: Option<&'a AccountInfo<'info>>,
+}
+
 /// `create_v2(name, symbol, uri, creator, is_mayhem_mode=false, cashback=false,
 /// creator_fee_bps=0, is_holder_reward)`. Account order per idls/pump.json.
 #[allow(clippy::too_many_arguments)]
@@ -111,10 +126,11 @@ pub fn create_v2(
     uri: &str,
     creator: &Pubkey,
     is_holder_reward: bool,
+    quote: Option<&QuoteAccounts>,
     signer_seeds: &[&[&[u8]]],
 ) -> Result<()> {
     let r = a.ra;
-    let accounts = vec![
+    let mut accounts = vec![
         meta(a.mint, true, true),
         meta(&r[ra::MINT_AUTHORITY], false, false),
         meta(&r[ra::BONDING_CURVE], true, false),
@@ -146,8 +162,21 @@ pub fn create_v2(
     // the holder-rewards PDA the creator); false sends them to `creator`, our vault (D-006, D-022).
     data.push(is_holder_reward as u8);
 
+    // Token pairs (D-023): pump reads the quote from remaining accounts after its named ones.
+    let mut extra: Vec<AccountInfo> = Vec::new();
+    if let Some(q) = quote {
+        accounts.push(meta(q.mint, false, false));
+        accounts.push(meta(q.associated_bonding_curve, true, false));
+        accounts.push(meta(q.token_program, false, false));
+        extra.extend([q.mint.clone(), q.associated_bonding_curve.clone(), q.token_program.clone()]);
+        if let Some(qc) = q.quote_control {
+            accounts.push(meta(qc, false, false));
+            extra.push(qc.clone());
+        }
+    }
+
     let ix = Instruction { program_id: PUMP_PROGRAM_ID, accounts, data };
-    let infos = [
+    let mut infos = vec![
         a.mint.clone(),
         r[ra::MINT_AUTHORITY].clone(),
         r[ra::BONDING_CURVE].clone(),
@@ -165,6 +194,7 @@ pub fn create_v2(
         r[ra::EVENT_AUTHORITY].clone(),
         a.pump_program.clone(),
     ];
+    infos.extend(extra);
     anchor_lang::solana_program::program::invoke_signed(&ix, &infos, signer_seeds)
         .map_err(Into::into)
 }
