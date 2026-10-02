@@ -119,14 +119,14 @@ pub struct QuoteAccounts<'a, 'info> {
 /// `create_v2(name, symbol, uri, creator, is_mayhem_mode=false, cashback=false,
 /// creator_fee_bps=0, is_holder_reward)`. Account order per idls/pump.json.
 #[allow(clippy::too_many_arguments)]
-pub fn create_v2(
-    a: &CreateV2Accounts,
+pub fn create_v2<'a, 'info>(
+    a: &CreateV2Accounts<'a, 'info>,
     name: &str,
     symbol: &str,
     uri: &str,
     creator: &Pubkey,
     is_holder_reward: bool,
-    quote: Option<&QuoteAccounts>,
+    quote: Option<&QuoteAccounts<'a, 'info>>,
     signer_seeds: &[&[&[u8]]],
 ) -> Result<()> {
     let r = a.ra;
@@ -163,7 +163,7 @@ pub fn create_v2(
     data.push(is_holder_reward as u8);
 
     // Token pairs (D-023): pump reads the quote from remaining accounts after its named ones.
-    let mut extra: Vec<AccountInfo> = Vec::new();
+    let mut extra: Vec<AccountInfo<'info>> = Vec::new();
     if let Some(q) = quote {
         accounts.push(meta(q.mint, false, false));
         accounts.push(meta(q.associated_bonding_curve, true, false));

@@ -159,7 +159,7 @@ fn validate(p: &CreateEscrowParams, config: &Config, now: i64, token_pool: bool)
 }
 
 pub fn process_create_escrow(ctx: Context<CreateEscrow>, p: CreateEscrowParams) -> Result<()> {
-    let a = &mut ctx.accounts;
+    let a = &mut *ctx.accounts;
     let escrow_key = a.escrow.key();
     init_escrow(
         &mut a.escrow,
@@ -178,7 +178,7 @@ pub fn process_create_escrow(ctx: Context<CreateEscrow>, p: CreateEscrowParams) 
 /// `via_quote_control`: pump admits the mint through its quote-control list (stocks and most
 /// coins) rather than Global's whitelist (USDC), so the launch passes that PDA to `create_v2`.
 pub fn process_create_token_escrow(ctx: Context<CreateTokenEscrow>, p: CreateEscrowParams, via_quote_control: bool) -> Result<()> {
-    let a = &mut ctx.accounts;
+    let a = &mut *ctx.accounts;
     // SOL pools are the SOL path; Token-2022's native mint isn't accepted by pump.
     let mint = a.quote_mint.key();
     require!(mint != WSOL_MINT && mint != TOKEN_2022_NATIVE_MINT, EscrowError::InvalidQuoteMint);

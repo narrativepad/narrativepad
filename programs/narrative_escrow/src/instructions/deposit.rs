@@ -136,7 +136,7 @@ pub fn process_deposit(ctx: Context<Deposit>, amount: u64, holder_rewards: bool)
     let clock = Clock::get()?;
     let escrow_key = ctx.accounts.escrow.key();
     let depositor_key = ctx.accounts.depositor.key();
-    let a = &mut ctx.accounts;
+    let a = &mut *ctx.accounts;
     let rec = record_deposit(
         &mut a.escrow,
         &mut a.receipt,
@@ -177,7 +177,7 @@ pub fn process_deposit_token(ctx: Context<DepositToken>, amount: u64, holder_rew
     let escrow_key = ctx.accounts.escrow.key();
     let depositor_key = ctx.accounts.depositor.key();
     let vote_bump = ctx.accounts.holder_vote.bump;
-    let a = &mut ctx.accounts;
+    let a = &mut *ctx.accounts;
     let rec = record_deposit(
         &mut a.escrow,
         &mut a.receipt,
