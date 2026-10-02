@@ -16,6 +16,8 @@ export function PairLogo({ pair, size = 20, className = "" }: { pair: Pick<PairO
         alt=""
         width={size}
         height={size}
+        loading="lazy"
+        decoding="async"
         onError={() => setBroken(true)}
         className={`shrink-0 rounded-full bg-white/[0.04] object-cover ring-1 ring-white/10 ${className}`}
         style={{ width: size, height: size }}

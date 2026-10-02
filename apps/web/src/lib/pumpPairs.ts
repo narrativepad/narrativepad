@@ -4,6 +4,7 @@
 import "server-only";
 import { PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
+import { pairLogo, resolvePairLogos } from "./pairLogos";
 import { BY_MINT, PUMP_PAIRS_SNAPSHOT, SOL_PAIR, type PairOption } from "./pairs";
 
 const RPC = process.env.PUMP_RPC_URL || "https://api.mainnet-beta.solana.com";
@@ -74,31 +75,23 @@ async function readLive(): Promise<PairOption[]> {
       if (symbol.s) meta.set(m, { name: name.s || symbol.s, symbol: symbol.s, uri: str(symbol.next).s });
     });
   }
-  const logos = new Map(await Promise.all(unknown.map(async (m) => [m, await metadataImage(meta.get(m)?.uri)] as const)));
+  // Their logos go through our own cache (pairLogos.ts); one that can't be fetched gets none.
+  await resolvePairLogos(unknown.map((m) => ({ mint: m, uri: meta.get(m)?.uri })));
   const named = (m: string): PairOption => {
     const x = meta.get(m);
     const name = x?.name ?? `Token ${short(m)}`;
     return {
       symbol: x?.symbol ?? short(m),
-      name: name.replace(/\s*(xStock|- Backpack Securities)\s*$/i, ""),
+      name: name
+        .replace(/\s*(xStock|- Backpack Securities)\s*$/i, "")
+        .replace(/,?\s*(Inc\.?,?\s*)?(Common Stock|Class [A-Z] (Ordinary|Common) Shares?|Ordinary Shares)\s*$/i, "")
+        .trim(),
       mint: m,
       kind: /xStock|Securities|ETF/i.test(name) ? "stock" : "crypto",
-      logo: logos.get(m) ?? null,
+      logo: pairLogo(m) ? `/api/pair-logo/${m}` : null,
     };
   };
   return [SOL_PAIR, ...mints.map((m) => BY_MINT.get(m) ?? named(m))];
-}
-
-/** The image in a token's metadata JSON (https only), or null. Best effort: a slow host just
- *  means a monogram until the next refresh. */
-async function metadataImage(uri: string | undefined): Promise<string | null> {
-  if (!uri?.startsWith("https://")) return null;
-  try {
-    const json = await (await fetch(uri, { signal: AbortSignal.timeout(3000) })).json();
-    return typeof json?.image === "string" && json.image.startsWith("https://") ? json.image : null;
-  } catch {
-    return null;
-  }
 }
 
 const METAPLEX = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");

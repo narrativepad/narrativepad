@@ -479,6 +479,19 @@ Format: date — decision — why — alternatives considered — decided by.
     Hex Trust) or the Solana token list (SOL, USDC, WBTC, WETH).
   - Bundled logos mean no hotlinking. A pair pump.fun adds later gets its metadata image
     live, or a monogram.
+  - **pump.fun's list grew from 40 to 191 pairs the same day.** It added about 20 more
+    Backpack stocks, the PUMP token (D-019 said it wasn't accepted; it is now) and roughly 120
+    community coins.
+    - Their logos live on arbitrary hosts and some are broken (a 404 and a non-image failed CI).
+    - `pairLogos.ts` now fetches each one once on the server, has sharp check that it is an
+      image (https only, 5 MB cap, no private hosts) and shrinks it to the same 96×96 WebP.
+      It is served from `/api/pair-logo/<mint>`.
+    - The list links a logo only once it is cached, so browsers never load from third-party
+      hosts and never hit a broken image. About 100 of the 151 new pairs get a logo; the rest
+      get a monogram.
+    - The cache lives on `globalThis`, like the database, because Next bundles pages and
+      route handlers separately.
+    - `sharp` is now pinned as a direct dependency; it was only a transitive one through Next.
 - **USDC pools on the site:**
   - Every escrow row records its pool token (`quote_*` columns; NULL = SOL).
   - Every amount is shown in the pool's unit (`units.ts`): pool cards, panel, charts,
