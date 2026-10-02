@@ -28,6 +28,8 @@ export interface TxRef {
 
 export interface LaunchStatus {
   launched: boolean;
+  /** Pool's deposit-weighted vote, settled at launch; null before. */
+  holderRewards: boolean | null;
   mint: string | null;
   tx: string | null;
   tokensBought: bigint;
@@ -44,9 +46,10 @@ export interface ChainAdapter {
   createEscrow(p: EscrowParams): Promise<TxRef & { address: string; vault: string }>;
   /** mock: executes after the server verified the wallet's signed message.
    *  solana: not called server-side; the wallet signs and sends the transaction itself. */
-  deposit(narrativeId: string, wallet: string, amount: bigint): Promise<TxRef & { orderIndex: number }>;
-  /** Permissionless crank. */
-  launch(narrativeId: string): Promise<TxRef & { mint: string; tokensBought: bigint }>;
+  /** `holderRewards` is the depositor's vote; it counts with the deposit's amount (D-019). */
+  deposit(narrativeId: string, wallet: string, amount: bigint, holderRewards: boolean): Promise<TxRef & { orderIndex: number }>;
+  /** Permissionless crank. Holder rewards go on if the "on" votes hold more SOL; a tie is off. */
+  launch(narrativeId: string): Promise<TxRef & { mint: string; tokensBought: bigint; holderRewards: boolean }>;
   claim(narrativeId: string, wallet: string): Promise<TxRef & { tokens: bigint; lamports: bigint }>;
   refund(narrativeId: string, wallet: string): Promise<TxRef & { amount: bigint }>;
   getLaunchStatus(narrativeId: string): Promise<LaunchStatus>;

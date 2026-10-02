@@ -2,15 +2,35 @@
 
 import { useState } from "react";
 import { canonicalJson, fromHex, lockHash, sha256Hex, uuidBytes } from "@/lib/math";
-import { entryLabel, type Field } from "@/lib/messages";
+import { entryLabel, FEE_MODE, type Field } from "@/lib/messages";
 import type { NarrativeDetail } from "@/lib/views";
 
 function Labelled({ field, value }: { field: Field; value: string }) {
   const { title, sub } = entryLabel(field, value);
   return (
-    <span title={field === "fees" ? value : undefined}>
+    <span>
       <span className="text-ink">{title}</span>
       {sub && <span className="block text-dim">{sub}</span>}
+    </span>
+  );
+}
+
+/** Not part of the lock: the pool decides holder rewards with its deposits (D-019). */
+function FeeRow({ n }: { n: NarrativeDetail }) {
+  const e = n.escrow;
+  if (e?.holderRewards != null) {
+    const m = FEE_MODE[e.holderRewards ? "on" : "off"];
+    return (
+      <span>
+        <span className="text-ink">{m.title}</span>
+        <span className="block text-dim">{m.sub}. Voted by the pool.</span>
+      </span>
+    );
+  }
+  return (
+    <span>
+      <span className="text-ink">Voted by the pool</span>
+      <span className="block text-dim">Everyone who joins votes holder rewards on or off, weighted by their SOL.</span>
     </span>
   );
 }
@@ -65,7 +85,7 @@ export function LockPanel({ n }: { n: NarrativeDetail }) {
           {row("Ticker", <span className="num text-ink">${l.symbol}</span>)}
           {l.launch && row("Launches on", <span className="text-ink">{l.launch.venue}</span>)}
           {l.launch && row("Pair", <Labelled field="pair" value={l.launch.pair} />)}
-          {l.launch && row("Creator fees", <Labelled field="fees" value={l.launch.fees} />)}
+          {l.launch && !l.launch.fees && row("Creator fees", <FeeRow n={n} />)}
           {l.links.twitter && row("X", <a className="text-info hover:underline" href={l.links.twitter} target="_blank" rel="noopener noreferrer nofollow">{l.links.twitter}</a>)}
           {l.links.telegram && row("Telegram", <a className="text-info hover:underline" href={l.links.telegram} target="_blank" rel="noopener noreferrer nofollow">{l.links.telegram}</a>)}
           {l.links.website && row("Website", <a className="text-info hover:underline" href={l.links.website} target="_blank" rel="noopener noreferrer nofollow">{l.links.website}</a>)}

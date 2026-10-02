@@ -260,3 +260,46 @@ Format: date — decision — why — alternatives considered — decided by.
   and `smoke.mjs` passing.
 - **Decided by:** owner ("only pump but with possibility to choose pair", "crowd votes on
   both", holder rewards or a fee wallet, 3 min) + Claude (design).
+- **Superseded in part by D-019:** the pair list and the fee ballot.
+
+### D-019 · 2026-10-02 · Pairs from pump.fun's live list; holder rewards voted by the pool
+- **Pairs.** The owner meant pairs like stocks (NVDA) or other coins, not stablecoins. Read
+  from mainnet today (pump.fun `Global` + `quote-control`, read-only):
+  - pump.fun accepts SOL, USDC (whitelist), WBTC, WETH, HYPE, wXRP, ONDO, and about 33
+    tokenized stocks and funds (xStocks such as NVDAx, TSLAx, AAPLx, SPYx, QQQx; Backpack
+    Securities such as SpaceX, AMC, Intel).
+  - **USD1 is not accepted** (D-018 listed it by mistake). **The PUMP token is not accepted.**
+  - The pair ballot starts with SOL (wins ties). Anyone can add a pair, but only one from that
+    list. `pumpPairs.ts` re-reads it hourly with keyless JSON-RPC (`PUMP_RPC_URL`, default
+    public mainnet) and falls back to the snapshot in `pairs.ts`, so pump.fun adding or
+    removing a pair shows up without a deploy.
+  - The lock commits `{venue, pair, pairMint}`.
+  - **Only SOL launches for real.** For any other pair, the plan is to keep pooling SOL and
+    have the escrow swap into the pair token inside the launch transaction. Refunds then
+    stay 100% SOL and unblockable, which matters because xStocks are Token-2022 mints with a
+    pausable flag and a permanent delegate: if the escrow held them, the issuer could block
+    refunds. The swap needs a price guard (oracle or min-out) against sandwiching. Not built.
+    Tokenized stocks are also not offered to US persons.
+- **Fees: holder rewards on/off, voted by the pool.**
+  - The owner wants "cashback on or off". pump.fun deprecated cashback for new coins
+    (`create_v2` fails with `CashbackDeprecated`; existing cashback coins keep working).
+    Holder rewards (`is_holder_reward`, enabled in `Global` today) replaced it: every trade's
+    creator fee goes to the coin's holders, permanently.
+  - The fee ballot and the voted fee wallet are gone; that also removes the sybil-wallet risk
+    from D-018.
+  - Each deposit now carries a holder-rewards vote, weighted by its lamports. The escrow
+    tallies it (`holder_votes_on/off`) and settles it at launch: on wins only if it holds
+    more SOL, and a tie is off. Free guest keys can't sway it, because weight costs real
+    money that then buys the coin; the per-wallet cap bounds any single wallet.
+  - **Off** = today's escrow split (50% pool, 30% creator, 20% platform). **On** = all
+    creator fees go to holders, so the creator and the platform get none (the platform keeps
+    its 1% launch fee).
+- **Not done yet (escrow program + audit):** storing the tally on-chain in `deposit`, setting
+  `is_holder_reward` at launch, deciding how the escrow vault (a big holder while tokens vest)
+  passes holder rewards through to depositors, and the swap-at-launch for non-SOL pairs.
+  The simulation implements the tally and the settlement rule, so the program has a spec.
+- **Verified:** `sim-e2e.ts` 20/20 (pair validation against the list, 2.5 SOL on vs 2 SOL off
+  settles "on" although more wallets said off, a deposit without a vote is rejected),
+  `ui-e2e.mjs` 67/67, and `smoke.mjs` passing.
+- **Decided by:** owner ("pair … stocks like nvda, pump coin", "turn cashback or not", "you do
+  all the thinking") + Claude (design).

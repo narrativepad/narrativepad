@@ -6,7 +6,9 @@ import { chain } from "./chain";
 import { config } from "./config";
 import { big, date, q, q1 } from "./db";
 import { proRata, unlockedTranches, vested } from "./math";
-import { FEE_PRESETS, FIELDS, type Field } from "./messages";
+import { FIELDS, type Field } from "./messages";
+import type { PairOption } from "./pairs";
+import { pumpPairs } from "./pumpPairs";
 import { entries, winners, type Entry } from "./narratives";
 import { phaseOf, stageFromPhase, type Phase, type Stage } from "./phase";
 
@@ -41,6 +43,11 @@ export interface EscrowView {
   tokensClaimed: string;
   baseLeftover: string;
   unlocked: number;
+  /** Lamports behind each side of the holder-rewards vote (D-019). */
+  holderVotesOn: string;
+  holderVotesOff: string;
+  /** Settled at launch; null before. */
+  holderRewards: boolean | null;
 }
 
 export interface DepositView {
@@ -49,6 +56,8 @@ export interface DepositView {
   amount: string;
   at: string;
   isTeam: boolean;
+  /** This deposit's holder-rewards vote; null for deposits made before D-019. */
+  holderRewards: boolean | null;
 }
 
 export interface NarrativeCard {
@@ -152,6 +161,9 @@ function escrowView(e: any): EscrowView {
     unlocked: e.launched
       ? unlockedTranches(now / 1000, date(e.launched_at).getTime() / 1000, Number(e.tranche_interval), Number(e.tranche_count))
       : 0,
+    holderVotesOn: big(e.holder_votes_on).toString(),
+    holderVotesOff: big(e.holder_votes_off).toString(),
+    holderRewards: e.holder_rewards ?? null,
   };
 }
 
@@ -260,8 +272,8 @@ export async function feed(limit = 120): Promise<NarrativeCard[]> {
 
 // ---- activity -------------------------------------------------------------------------------
 
-/** Seeded pair and fee options (D-018) are not anyone's submission. */
-const NOT_PRESET = `field <> 'pair' AND NOT (field = 'fees' AND value IN (${FEE_PRESETS.map((f) => `'${f}'`).join(",")}))`;
+/** The seeded SOL pair is not anyone's submission; `fees` rows are from the D-018 fee ballot. */
+const NOT_PRESET = `NOT (field = 'pair' AND value = 'SOL') AND field <> 'fees'`;
 
 const ACTIVITY_SQL = (where: string) => `
   (SELECT 'vote' AS kind, v.narrative_id, v.voter_wallet AS wallet, v.field, s.value, NULL::text AS amount, v.created_at AS at
@@ -333,8 +345,9 @@ export interface NarrativeDetail {
     symbol: string;
     image: string | null;
     links: { twitter: string | null; telegram: string | null; website: string | null };
-    /** Venue, pair and creator-fee choice (D-018). Null on locks made before it existed. */
-    launch: { venue: string; pair: string; fees: string } | null;
+    /** Venue and pair (D-018/D-019). Null on locks made before it existed; `fees` only on
+     *  D-018 locks, before the fee vote moved into the pool. */
+    launch: { venue: string; pair: string; pairMint?: string | null; fees?: string } | null;
     metadataUri: string;
     metadataJson: string;
     detailsHash: string;
@@ -353,6 +366,8 @@ export interface NarrativeDetail {
   /** One row per depositing wallet, biggest first. Tokens only once launched. */
   holders: { wallet: string; amount: string; sharePct: number; tokens: string | null; refunded: boolean; isTeam: boolean }[];
   preview: boolean;
+  /** pump.fun's current pairs, for the pair ballot. Empty once voting is over. */
+  pairOptions: PairOption[];
 }
 
 export interface CommentView {
@@ -434,6 +449,7 @@ export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | n
       amount: big(d.amount).toString(),
       at: date(d.created_at).toISOString(),
       isTeam: team.has(d.wallet),
+      holderRewards: d.holder_rewards ?? null,
     })),
     flow: deps.map((d) => ({ t: date(d.created_at).getTime(), total: (running += big(d.amount)).toString() })),
     activity: feedItems,
@@ -447,6 +463,7 @@ export async function narrativeBySlug(slug: string): Promise<NarrativeDetail | n
       isTeam: team.has(r.wallet),
     })),
     preview: preview(),
+    pairOptions: stage === "voting" ? await pumpPairs({ wait: false }) : [],
   };
 }
 

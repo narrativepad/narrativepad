@@ -60,7 +60,7 @@ export const mockAdapter: ChainAdapter = {
     return { address, vault, tx };
   },
 
-  deposit: (narrativeId, wallet, amount) =>
+  deposit: (narrativeId, wallet, amount, holderRewards) =>
     transaction(async (tx) => {
       const e = await lockedEscrow(tx, narrativeId);
       if (phaseFor(e) !== "pooling") throw new ChainError("NotPooling", "Deposit window is not open");
@@ -83,13 +83,15 @@ export const mockAdapter: ChainAdapter = {
           [narrativeId, wallet, walletTotal.toString(), orderIndex],
         );
       }
-      await tx.query(`INSERT INTO deposits (narrative_id, order_index, wallet, amount, tx) VALUES ($1,$2,$3,$4,$5)`, [
-        narrativeId, orderIndex, wallet, amount.toString(), sig,
+      await tx.query(`INSERT INTO deposits (narrative_id, order_index, wallet, amount, tx, holder_rewards) VALUES ($1,$2,$3,$4,$5,$6)`, [
+        narrativeId, orderIndex, wallet, amount.toString(), sig, holderRewards,
       ]);
       await tx.query(
         `UPDATE escrows SET total_deposited = $2, next_order_index = next_order_index + 1,
-           depositor_count = depositor_count + $3, synced_at = now() WHERE narrative_id = $1`,
-        [narrativeId, poolTotal.toString(), r ? 0 : 1],
+           depositor_count = depositor_count + $3,
+           ${holderRewards ? "holder_votes_on = holder_votes_on" : "holder_votes_off = holder_votes_off"} + $4,
+           synced_at = now() WHERE narrative_id = $1`,
+        [narrativeId, poolTotal.toString(), r ? 0 : 1, amount.toString()],
       );
       return { tx: sig, orderIndex };
     }),
@@ -107,12 +109,14 @@ export const mockAdapter: ChainAdapter = {
       const leftover = LAUNCH_RENT_RESERVE - SIM_LAUNCH_RENT;
       const mint = fakeAddress("mint", narrativeId);
       const sig = fakeTx();
+      // On-chain this becomes create_v2's `is_holder_reward` (not built in the program yet).
+      const holderRewards = big(e.holder_votes_on) > big(e.holder_votes_off);
       await tx.query(
         `UPDATE escrows SET launched = TRUE, launched_at = now(), mint = $2, launch_tx = $3, platform_fee = $4,
-           tokens_bought = $5, base_leftover = $6, synced_at = now() WHERE narrative_id = $1`,
-        [narrativeId, mint, sig, b.platformFee.toString(), b.tokens.toString(), leftover.toString()],
+           tokens_bought = $5, base_leftover = $6, holder_rewards = $7, synced_at = now() WHERE narrative_id = $1`,
+        [narrativeId, mint, sig, b.platformFee.toString(), b.tokens.toString(), leftover.toString(), holderRewards],
       );
-      return { tx: sig, mint, tokensBought: b.tokens };
+      return { tx: sig, mint, tokensBought: b.tokens, holderRewards };
     }),
 
   claim: (narrativeId, wallet) =>
@@ -166,6 +170,7 @@ export const mockAdapter: ChainAdapter = {
     const e = await q1<any>(`SELECT * FROM escrows WHERE narrative_id = $1`, [narrativeId]);
     return {
       launched: Boolean(e?.launched),
+      holderRewards: e?.holder_rewards ?? null,
       mint: e?.mint ?? null,
       tx: e?.launch_tx ?? null,
       tokensBought: big(e?.tokens_bought),

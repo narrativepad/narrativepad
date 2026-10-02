@@ -10,7 +10,7 @@ import { useSigned } from "@/lib/client/useSigned";
 const TIPS: [string, string][] = [
   ["Be specific", "“A cat that refuses to leave the moon” beats “a space coin”."],
   ["Add the source", "The tweet, clip or article the narrative comes from."],
-  ["Suggest, don't decide", "Your name, ticker and picture are the first ballot entries. The crowd votes on them, the pair and the fees."],
+  ["Suggest, don't decide", "Your name, ticker and picture are the first ballot entries. The crowd votes on them and on the pair."],
   ["Keep it original", "Impersonating real brands or people is blocked."],
 ];
 
@@ -179,7 +179,7 @@ export function CreateForm() {
               <span className="label">Launch</span>
               <div className="mt-1.5 flex h-[2.85rem] items-center gap-2 rounded-xl border border-line bg-white/[0.02] px-3.5 text-[0.82rem] text-muted">
                 <span className="font-medium text-ink">pump.fun</span>
-                <span className="truncate">· the crowd votes on pair and creator fees</span>
+                <span className="truncate">· the crowd picks the pair: SOL, a coin or a stock</span>
               </div>
             </div>
           </div>
@@ -267,8 +267,8 @@ export function CreateForm() {
             {(
               [
                 ["Voting", `${Math.round(cfg.voteDurationSec / 60)} min. Anyone can add entries and vote, one vote per person per field.`, "bg-violet"],
-                ["Lock", "The winning name, ticker, picture, pair and fee choice are frozen and hashed.", "bg-accent"],
-                ["Pool", `${Math.round(cfg.depositWindowSec / 60)} min public pool. Same price for everyone who joins.`, "bg-info"],
+                ["Lock", "The winning name, ticker, picture and pair are frozen and hashed.", "bg-accent"],
+                ["Pool", `${Math.round(cfg.depositWindowSec / 60)} min public pool. Same price for everyone who joins, and their SOL votes holder rewards on or off.`, "bg-info"],
                 ["Launch", "The coin is created and the whole pool buys in, in one transaction.", "bg-gold"],
                 ["Release", `Tokens unlock to everyone in ${cfg.trancheCount} equal tranches.`, "bg-accent"],
               ] as const

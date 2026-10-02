@@ -30,7 +30,7 @@
 
 When a good coin idea appears, snipers and copycats launch first, insiders bundle, and the community that made the narrative ends up as exit liquidity.
 
-narrativepad flips that. **The crowd decides everything before the coin exists**: the name, ticker and image, what it trades against, and where the creator fees go. Then everyone who wants in **buys at launch through one public escrow, at the same price**. The coin is created and bought in a single transaction, so nobody gets in ahead of the pool. If it doesn't launch, everyone takes back 100%.
+narrativepad flips that. **The crowd decides everything before the coin exists**: the name, ticker and image, and what it trades against (SOL, another coin, or a tokenized stock). Then everyone who wants in **buys at launch through one public escrow, at the same price**. The coin is created and bought in a single transaction, so nobody gets in ahead of the pool. If it doesn't launch, everyone takes back 100%.
 
 ## How it works
 
@@ -39,9 +39,9 @@ narrativepad flips that. **The crowd decides everything before the coin exists**
 | Stage | What happens | Default |
 |---|---|---|
 | **Propose** | Anyone posts a pitch and its source: a tweet, a clip, a meme. | anytime |
-| **Vote** | The crowd suggests and votes on name, ticker, image, pair and creator fees. One signed vote per person per field; ties go to the earliest entry. | 3 min |
+| **Vote** | The crowd suggests and votes on name, ticker, image and pair (anything pump.fun accepts). One signed vote per person per field; ties go to the earliest entry. | 3 min |
 | **Lock** | The winners are frozen, and a hash of the metadata is committed, so nobody (including us) can swap them. | instant |
-| **Pool** | Deposits go into one public escrow, never to a wallet anyone controls. Per-wallet max and pool cap are enforced. | 10 min |
+| **Pool** | Deposits go into one public escrow, never to a wallet anyone controls. Per-wallet max and pool cap are enforced. Each deposit also votes pump.fun holder rewards on or off, weighted by its SOL. | 10 min |
 | **Launch** | The escrow creates the coin and makes the opening buy with the whole pool, in the same transaction. | ~2 min later |
 | **Release** | Tokens go back to every depositor pro-rata, unlocking in equal steps for everyone at once. | 5 × 5 min |
 

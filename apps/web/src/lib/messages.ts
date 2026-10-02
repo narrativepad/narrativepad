@@ -2,10 +2,12 @@
 // rebuilds the message from the submitted payload and verifies the signature over it, so a
 // signature can only ever authorise the action shown to the user. Signing is free (no tx).
 import { z } from "zod";
+// Explicit extension: the e2e scripts load this file directly with node --experimental-strip-types.
+import { knownPair, LIVE_PAIRS } from "./pairs.ts";
 
-/** Ballots shown, voted on and locked (D-018). The link ballots (x, telegram, website) are
+/** Ballots shown, voted on and locked (D-018, D-019). The link ballots (x, telegram, website) are
  *  switched off while the launch flow is being tested; their code paths stay for later. */
-export const FIELDS = ["name", "ticker", "image", "pair", "fees"] as const;
+export const FIELDS = ["name", "ticker", "image", "pair"] as const;
 export const LINK_FIELDS = ["x", "telegram", "website"] as const;
 export type Field = (typeof FIELDS)[number] | (typeof LINK_FIELDS)[number];
 export const FIELD_LABEL: Record<Field, string> = {
@@ -13,30 +15,26 @@ export const FIELD_LABEL: Record<Field, string> = {
   ticker: "Ticker",
   image: "Image",
   pair: "Pair",
-  fees: "Creator fees",
   x: "X / Twitter",
   telegram: "Telegram",
   website: "Website",
 };
 export const REQUIRED_FIELDS: Field[] = ["name", "ticker"];
 
-// The coin always launches on pump.fun (D-018). The crowd votes on what it trades against and
-// where pump.fun's creator fees go. Fixed options are seeded when a narrative is created; the
-// first listed wins on a tie (earliest entry), so SOL and the escrow split are the defaults.
-export const PAIRS = ["SOL", "USDC", "USD1"] as const;
-export const FEE_PRESETS = ["split", "holders"] as const;
-/** Pairs a real launch can use today; the escrow pools SOL. */
-export const LIVE_PAIRS = new Set<string>(["SOL"]);
-export const SOL_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+/** The two creator-fee modes the pool votes between (D-019). pump.fun no longer lets new coins
+ *  turn on cashback; holder rewards is what replaced it. */
+export const FEE_MODE = {
+  on: { title: "Holder rewards on", sub: "pump.fun pays every trade's creator fee to the coin's holders, for good" },
+  off: { title: "Holder rewards off", sub: "creator fees split 50% to the pool, 30% to the creator, 20% to the platform" },
+} as const;
 
 /** How an entry reads on screen (ballots, activity, lock panel). */
 export function entryLabel(field: Field, value: string): { title: string; sub?: string } {
   if (field === "ticker") return { title: `$${value}` };
-  if (field === "pair") return { title: `${value} pair`, sub: LIVE_PAIRS.has(value) ? "trades against SOL on pump.fun" : "preview only for now; real launches pair with SOL" };
-  if (field === "fees") {
-    if (value === "split") return { title: "Split the fees", sub: "50% to the pool, 30% to the creator, 20% to the platform" };
-    if (value === "holders") return { title: "Holder rewards", sub: "pump.fun shares creator fees with the coin's holders" };
-    return { title: `Wallet ${value.slice(0, 4)}…${value.slice(-4)}`, sub: "all creator fees go to this wallet" };
+  if (field === "pair") {
+    const p = knownPair(value);
+    if (LIVE_PAIRS.has(value)) return { title: `${value} pair`, sub: "trades against SOL on pump.fun" };
+    return { title: `${value} pair`, sub: `${p ? `${p.name}${p.kind === "stock" ? " stock" : ""} · ` : ""}simulated for now` };
   }
   if (field === "x" || field === "telegram" || field === "website") return { title: value.replace(/^https:\/\//, "") };
   return { title: value };
@@ -72,7 +70,8 @@ export const payloadSchemas = {
   }),
   submit: z.object({ narrativeId: id, field: z.enum(FIELDS), value: z.string().trim().min(1).max(300) }),
   vote: z.object({ narrativeId: id, field: z.enum(FIELDS), submissionId: id }),
-  deposit: z.object({ narrativeId: id, amountLamports: z.string().regex(/^\d{1,18}$/) }),
+  /** `holderRewards` is this deposit's vote, weighted by its amount (D-019). */
+  deposit: z.object({ narrativeId: id, amountLamports: z.string().regex(/^\d{1,18}$/), holderRewards: z.boolean() }),
   claim: z.object({ narrativeId: id }),
   refund: z.object({ narrativeId: id }),
   report: z.object({
@@ -122,6 +121,7 @@ function lines<A extends Action>(action: A, p: Payload<A>, simulation: boolean):
       return [
         ["Narrative", d.narrativeId],
         ["Amount (lamports)", d.amountLamports],
+        ["Holder rewards vote", d.holderRewards ? "on" : "off"],
         ["Mode", simulation ? "SIMULATION, no funds move" : "on-chain"],
       ];
     }

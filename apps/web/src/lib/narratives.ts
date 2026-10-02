@@ -8,26 +8,18 @@ import { config } from "./config";
 import { date, q, q1, transaction } from "./db";
 import { publish } from "./events";
 import { canonicalJson, fromHex, lockHash, merkleRoot, sha256Hex, uuidBytes } from "./math";
-import {
-  COMMENT_MAX_LINES,
-  COMMENT_MAX_WORDS,
-  countWords,
-  FEE_PRESETS,
-  FIELDS,
-  normaliseComment,
-  PAIRS,
-  REQUIRED_FIELDS,
-  SOL_ADDRESS_RE,
-  type Field,
-} from "./messages";
+import { COMMENT_MAX_LINES, COMMENT_MAX_WORDS, countWords, FIELDS, normaliseComment, REQUIRED_FIELDS, type Field } from "./messages";
 import { HIDE_THRESHOLD, moderateText } from "./moderation";
+import { knownPair, SOL_PAIR, type PairOption } from "./pairs";
+import { pumpPairs } from "./pumpPairs";
 
 const MAX_SUBMISSIONS_PER_WALLET_PER_FIELD = 3;
 export const IMAGE_PATH_RE = /^\/api\/images\/[a-f0-9]{64}$/;
 
 // ---- validation -----------------------------------------------------------------------------
 
-export function normaliseEntry(field: Field, raw: string): string {
+/** `pairs` is pump.fun's current list; required for the pair field. */
+export function normaliseEntry(field: Field, raw: string, pairs: PairOption[] = []): string {
   const v = raw.trim();
   const fail = (m: string): never => {
     throw new HttpError(400, m);
@@ -46,14 +38,10 @@ export function normaliseEntry(field: Field, raw: string): string {
       if (!IMAGE_PATH_RE.test(v)) fail("Upload an image first");
       return v;
     case "pair": {
-      const p = v.toUpperCase();
-      if (!(PAIRS as readonly string[]).includes(p)) fail(`Pick one of: ${PAIRS.join(", ")}`);
-      return p;
+      const p = pairs.find((o) => o.symbol.toLowerCase() === v.toLowerCase());
+      if (!p) return fail("pump.fun doesn't accept that pair. Pick one from the list");
+      return p.symbol;
     }
-    case "fees":
-      if ((FEE_PRESETS as readonly string[]).includes(v)) return v;
-      if (!SOL_ADDRESS_RE.test(v)) fail("Paste a Solana wallet address for the fees");
-      return v;
     case "x":
       if (!/^https:\/\/(x|twitter)\.com\/[A-Za-z0-9_]{1,15}(\/.*)?$/.test(v)) fail("Must be an https://x.com/… link");
       break;
@@ -110,14 +98,13 @@ export async function createNarrative(v: Verified<"create">): Promise<{ id: stri
        VALUES ($1,$2,$3,$4,$5,$6,'voting',$7,$8,$9,$10)`,
       [id, slug, config.chain, v.wallet, p.pitch, p.sourceUrl ?? null, voteEndsAt, JSON.stringify(snapshot), v.message, v.signature],
     );
-    // The creator's suggestions, then the fixed pair and fee options in default-first order (a
-    // tie goes to the earliest entry). Link ballots are off for now (D-018).
+    // The creator's suggestions, then SOL as the default pair (a tie goes to the earliest entry,
+    // so SOL wins unless another pair gets more votes). Link ballots are off for now (D-018).
     const seeds: [Field, string | null][] = [
       ["name", name],
       ["ticker", ticker],
       ["image", image],
-      ...PAIRS.map((pair): [Field, string] => ["pair", pair]),
-      ...FEE_PRESETS.map((fee): [Field, string] => ["fees", fee]),
+      ["pair", SOL_PAIR.symbol],
     ];
     for (const [field, value] of seeds) {
       if (!value) continue;
@@ -141,7 +128,7 @@ async function votingNarrative(narrativeId: string) {
 export async function addSubmission(v: Verified<"submit">): Promise<{ id: string }> {
   const { narrativeId, field } = v.payload;
   await votingNarrative(narrativeId);
-  const value = normaliseEntry(field, v.payload.value);
+  const value = normaliseEntry(field, v.payload.value, field === "pair" ? await pumpPairs() : []);
   const mine = await q1<{ c: string }>(
     `SELECT COUNT(*)::text AS c FROM submissions WHERE narrative_id = $1 AND field = $2 AND submitter_wallet = $3`,
     [narrativeId, field, v.wallet],
@@ -302,7 +289,10 @@ export async function finalizeVoting(narrativeId: string): Promise<void> {
     const metadataUri = `${config.publicUrl}/api/metadata/${narrativeId}`;
     const winnerIds = Object.fromEntries(FIELDS.filter((f) => win[f]).map((f) => [f, win[f]!.id]));
     // How the coin launches. Hashed into details, so the on-chain lock hash commits to it too.
-    const launch = { venue: "pump.fun", pair: win.pair?.value ?? PAIRS[0], fees: win.fees?.value ?? FEE_PRESETS[0] };
+    // Creator fees are not here: the pool votes on them with its deposits (D-019).
+    const pair = win.pair?.value ?? SOL_PAIR.symbol;
+    const pairMint = (await pumpPairs()).find((o) => o.symbol === pair)?.mint ?? knownPair(pair)?.mint ?? null;
+    const launch = { venue: "pump.fun", pair, pairMint };
     const detailsHash = sha256Hex(canonicalJson({ narrativeId, chain: config.chain, metadata, votesRoot, winners: winnerIds, launch }));
     const hash = lockHash(uuidBytes(narrativeId), name, symbol, metadataUri, fromHex(detailsHash));
     await q(

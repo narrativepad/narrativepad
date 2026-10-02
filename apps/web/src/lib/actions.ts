@@ -47,7 +47,7 @@ export async function commentAction(id: string, v: Verified<"comment">) {
 export async function depositAction(id: string, v: Verified<"deposit">) {
   sameNarrative(id, v.payload.narrativeId);
   simulationOnly();
-  const out = await viaChain(() => chain().deposit(id, v.wallet, BigInt(v.payload.amountLamports)));
+  const out = await viaChain(() => chain().deposit(id, v.wallet, BigInt(v.payload.amountLamports), v.payload.holderRewards));
   publish(id, "deposit", { wallet: v.wallet, amount: v.payload.amountLamports });
   return json(out);
 }

@@ -120,9 +120,9 @@ function ReleaseArt({ count }: { count: number }) {
 export function HowItWorks({ heading = true }: { heading?: boolean }) {
   const steps: { t: string; d: string; when: string; art: React.ReactNode; hex: string }[] = [
     { t: "Propose", d: "Anyone posts a pitch and its source: a tweet, a clip, a meme.", when: "anyone, any time", art: <ProposeArt />, hex: "#a3a8b0" },
-    { t: "Vote", d: "The crowd suggests and votes on the name, ticker, image, pair and creator fees. One vote per person per field.", when: `${min(config.voteDurationSec)} min`, art: <VoteArt />, hex: "#a98bff" },
+    { t: "Vote", d: "The crowd suggests and votes on the name, ticker, image and pair. One vote per person per field.", when: `${min(config.voteDurationSec)} min`, art: <VoteArt />, hex: "#a98bff" },
     { t: "Lock", d: "The winners are frozen and hashed, so nobody, including us, can swap the name or image later.", when: "instant", art: <LockArt />, hex: "#3d8bff" },
-    { t: "Pool", d: "Everyone who wants in deposits into one public escrow. Every deposit is listed, in order.", when: `${min(config.depositWindowSec)} min`, art: <PoolArt />, hex: "#3d8bff" },
+    { t: "Pool", d: "Everyone who wants in deposits into one public escrow and votes holder rewards on or off. Every deposit is listed, in order.", when: `${min(config.depositWindowSec)} min`, art: <PoolArt />, hex: "#3d8bff" },
     { t: "Launch", d: "The coin is created and the whole pool buys in, in the same transaction. Nobody gets in first.", when: `~${min(config.launchDelaySec)} min later`, art: <LaunchArt />, hex: "#ffd032" },
     {
       t: "Release",

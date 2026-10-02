@@ -144,18 +144,19 @@ await check("vote on a ticker", async () => {
   await page.click('button[aria-label="Vote for $AUDOG"]');
   await toast(/Vote counted/);
 });
-await check("only name, ticker, image, pair and fee ballots; no link ballots", async () => {
-  for (const t of ["Pair", "Creator fees"]) await page.locator(".panel-head", { hasText: t }).first().waitFor({ timeout: 3000 });
-  if (await page.locator(".panel-head", { hasText: /X \/ Twitter|Telegram|Website/ }).count()) throw new Error("link ballots are still shown");
-  if (await page.locator('input[aria-label="New Pair entry"]').count()) throw new Error("pair ballot takes free-text entries");
+await check("only name, ticker, image and pair ballots; no link or fee ballots", async () => {
+  await page.locator(".panel-head", { hasText: "Pair" }).first().waitFor({ timeout: 3000 });
+  if (await page.locator(".panel-head", { hasText: /X \/ Twitter|Telegram|Website|Creator fees/ }).count()) throw new Error("link or fee ballots are still shown");
 });
-await check("vote SOL pair; add a wallet to the fee ballot and vote for it", async () => {
-  await page.click('button[aria-label="Vote for SOL pair"]');
-  await toast(/Vote counted/);
-  await page.fill('input[aria-label="New Creator fees entry"]', "So11111111111111111111111111111111111111112");
-  await page.locator('form:has(input[aria-label="New Creator fees entry"]) button').click();
+await check("pair picker offers pump.fun's coins and stocks; add NVIDIA, vote SOL", async () => {
+  const picker = page.locator('select[aria-label="New Pair entry"]');
+  if (!(await picker.locator('option[value="TSLAx"]').count())) throw new Error("stocks missing from the pair picker");
+  if (await picker.locator('option[value="SOL"]').count()) throw new Error("SOL is already on the ballot but still offered");
+  await picker.selectOption("NVDAx");
+  await page.locator('form:has(select[aria-label="New Pair entry"]) button').click();
   await toast(/Entry added/);
-  await page.click('button[aria-label="Vote for Wallet So11…1112"]');
+  await page.locator('button[aria-label="Vote for NVDAx pair"]').waitFor({ timeout: 5000 });
+  await page.click('button[aria-label="Vote for SOL pair"]');
   await toast(/Vote counted/);
 });
 await check("upload an image entry", async () => {
@@ -257,9 +258,12 @@ await check("amount below the minimum shows an error", async () => {
   await waitText("Minimum is", 3000);
   if (await page.locator('button:has-text("Join the pool")').isEnabled()) throw new Error("Join enabled for an invalid amount");
 });
-await check("join the pool with a quick amount (0.5)", async () => {
+await check("join waits for a holder-rewards vote, then joins with 0.5 SOL voting on", async () => {
   await page.click('button:text-is("0.5")');
   await waitText("Your share of the pool", 3000);
+  const join = page.locator('form:has(input[aria-label="Amount in SOL"]) button.btn-accent');
+  if ((await join.textContent())?.trim() !== "Vote holder rewards on or off" || (await join.isEnabled())) throw new Error("joined without a holder-rewards vote");
+  await page.click('[role="radiogroup"][aria-label="Holder rewards"] [role="radio"]:text-is("On")');
   await page.click('button:has-text("Join the pool")');
   await toast(/You're in the pool/);
   await waitText("Your position", 8000);
@@ -276,6 +280,10 @@ await check("top up to reach the launch minimum", async () => {
   await toast(/You're in the pool/);
   await waitText("minimum reached", 8000);
 });
+await check("holder-rewards tally shows the pool's SOL-weighted vote", async () => {
+  await waitText("Holder rewards vote", 3000);
+  await waitText("on 100% · 1 SOL", 3000);
+});
 await check("deposit list shows both deposits in order", async () => {
   await waitText("Deposits, in order", 3000);
   const rows = await page.locator("ol li", { hasText: "#2" }).count();
@@ -289,7 +297,7 @@ await check("locked launch settings: pump.fun, SOL pair, voted fee wallet", asyn
   const lock = page.locator("section", { hasText: "Locked metadata" });
   await lock.getByText("pump.fun", { exact: true }).waitFor({ timeout: 3000 });
   await lock.getByText("SOL pair", { exact: true }).waitFor({ timeout: 3000 });
-  await lock.getByText("Wallet So11…1112", { exact: true }).waitFor({ timeout: 3000 });
+  await lock.getByText("Voted by the pool", { exact: true }).waitFor({ timeout: 3000 });
 });
 await check("bonding curve chart shows where the pool buys", async () => {
   await page.click('button[role="tab"]:has-text("Bonding curve")');
@@ -313,6 +321,7 @@ await page.goto(urlB, { waitUntil: "load" });
 await check("pool opens on the second narrative", () => page.locator('button:has-text("Join the pool")').waitFor({ timeout: 60_000 }));
 await check("deposit 0.25 SOL (under the 1 SOL minimum)", async () => {
   await page.click('button:text-is("0.25")');
+  await page.click('[role="radiogroup"][aria-label="Holder rewards"] [role="radio"]:text-is("Off")');
   await page.click('button:has-text("Join the pool")');
   await toast(/You're in the pool/);
 });
@@ -323,6 +332,9 @@ await page.goto(urlA, { waitUntil: "load" });
 await check("coin launches; community pool buy is labelled", async () => {
   await waitText("Community pool buy", 70_000);
   await waitText("Launched by the community pool", 3000);
+});
+await check("launch settles holder rewards from the pool vote (on)", async () => {
+  await page.locator("section", { hasText: "Locked metadata" }).getByText("Holder rewards on", { exact: true }).waitFor({ timeout: 5000 });
 });
 await check("claim the first tranche", async () => {
   const btn = page.locator("button", { hasText: /^Claim/ });

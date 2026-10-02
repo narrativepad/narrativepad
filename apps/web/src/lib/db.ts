@@ -105,6 +105,10 @@ CREATE TABLE IF NOT EXISTS escrows (
   base_leftover BIGINT,
   synced_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- D-019: holder-rewards vote, weighted by lamports deposited; settled at launch (NULL before).
+ALTER TABLE escrows ADD COLUMN IF NOT EXISTS holder_votes_on BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE escrows ADD COLUMN IF NOT EXISTS holder_votes_off BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE escrows ADD COLUMN IF NOT EXISTS holder_rewards BOOLEAN;
 
 CREATE TABLE IF NOT EXISTS receipts (
   narrative_id TEXT NOT NULL REFERENCES narratives(id),
@@ -128,6 +132,7 @@ CREATE TABLE IF NOT EXISTS deposits (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (narrative_id, order_index)
 );
+ALTER TABLE deposits ADD COLUMN IF NOT EXISTS holder_rewards BOOLEAN;
 
 CREATE TABLE IF NOT EXISTS claims (
   narrative_id TEXT NOT NULL REFERENCES narratives(id),

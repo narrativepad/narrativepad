@@ -93,7 +93,7 @@ async function narrative(creator: W, s: Spec, images: string[]) {
   }
   await sub(crowd[3], "image", images[s.art]);
   await sub(crowd[4], "image", images[(s.art + 5) % images.length]);
-  if (s.voters % 2 === 1) await sub(crowd[5], "fees", crowd[5].address);
+  if (s.voters % 2 === 1) await sub(crowd[5], "pair", ["NVDAx", "WBTC", "TSLAx", "SPCX"][s.art % 4]);
   const d = await (await fetch(`${BASE}/api/n/${slug}`)).json();
   const id0 = (field: string, i = 0) => d.ballots[field].entries[i]?.id;
   const chatter = [
@@ -111,9 +111,8 @@ async function narrative(creator: W, s: Spec, images: string[]) {
     await v("name", id0("name", i % 4 === 0 && d.ballots.name.entries.length > 1 ? 1 : 0));
     await v("ticker", id0("ticker", i % 5 === 0 && d.ballots.ticker.entries.length > 1 ? 1 : 0));
     await v("image", id0("image", i % 3 === 0 ? 1 : 0));
-    // Pair entries are SOL, USDC, USD1; fees are split, holders, then any submitted wallet.
+    // Pair entries are SOL, then the one a crowd member added (if any).
     if (i % 2 === 0) await v("pair", id0("pair", i % 6 === 4 ? 1 : 0));
-    if (i % 3 !== 2) await v("fees", id0("fees", Math.min(i % 3, d.ballots.fees.entries.length - 1)));
   }
   return { id, slug };
 }
@@ -132,6 +131,7 @@ async function deposits(id: string, amounts: number[]) {
     await crowd[(i * 5 + 3) % crowd.length].post(`/api/narratives/${id}/deposit`, "deposit", {
       narrativeId: id,
       amountLamports: BigInt(Math.round(a * 1e9)).toString(),
+      holderRewards: i % 3 !== 1,
     });
   }
 }

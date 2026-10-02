@@ -6,8 +6,9 @@ import { Portal } from "@/components/Portal";
 import { useToast } from "@/components/Providers";
 import { useMine } from "@/lib/client/useMine";
 import { useSigned } from "@/lib/client/useSigned";
-import { entryLabel, FEE_PRESETS, FIELD_LABEL, FIELDS, LINK_FIELDS, REQUIRED_FIELDS, type Field } from "@/lib/messages";
+import { entryLabel, FIELD_LABEL, FIELDS, LINK_FIELDS, REQUIRED_FIELDS, type Field } from "@/lib/messages";
 import { displayName } from "@/lib/names";
+import type { PairOption } from "@/lib/pairs";
 import type { NarrativeDetail } from "@/lib/views";
 
 const PLACEHOLDER: Record<Field, string> = {
@@ -15,7 +16,6 @@ const PLACEHOLDER: Record<Field, string> = {
   ticker: "Suggest a ticker",
   image: "",
   pair: "",
-  fees: "Or paste a wallet for the fees",
   x: "https://x.com/…",
   telegram: "https://t.me/…",
   website: "https://…",
@@ -23,12 +23,11 @@ const PLACEHOLDER: Record<Field, string> = {
 
 /** One-line explainer under the ballot title. */
 const HINT: Partial<Record<Field, string>> = {
-  pair: "What the coin trades against on pump.fun.",
-  fees: "Where pump.fun's creator fees go after launch.",
+  pair: "What the coin trades against on pump.fun: SOL, another coin, or a stock. Real launches use SOL until the escrow can swap at launch.",
 };
 
-/** Options everyone starts with: shown without a "by …" credit. */
-const isPreset = (field: Field, value: string) => field === "pair" || (field === "fees" && (FEE_PRESETS as readonly string[]).includes(value));
+/** The default SOL pair is seeded, so it is shown without a "by …" credit. */
+const isPreset = (field: Field, value: string) => field === "pair" && value === "SOL";
 
 type Entry = NarrativeDetail["ballots"][Field]["entries"][number];
 const pctOf = (votes: number, total: number) => (total > 0 ? (votes / total) * 100 : 0);
@@ -38,7 +37,7 @@ export function Ballots({ n, version }: { n: NarrativeDetail; version: string })
   const open = n.stage === "voting" && Date.parse(n.voteEndsAt) > Date.now();
   const { votes: myVotes } = useMine(n.id, version);
   return (
-    <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+    <div className="grid gap-3 md:grid-cols-2">
       {FIELDS.map((f) => (
         <FieldBallot key={f} n={n} field={f} open={open} myVote={myVotes[f]} />
       ))}
@@ -164,7 +163,7 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: (t
                         {e.value.replace(/^https:\/\//, "")}
                       </a>
                     ) : (
-                      <span className={`block truncate text-sm font-medium ${field === "ticker" ? "num" : ""}`} title={field === "fees" ? e.value : undefined}>
+                      <span className={`block truncate text-sm font-medium ${field === "ticker" ? "num" : ""}`}>
                         {entryLabel(field, e.value).title}
                       </span>
                     )}
@@ -173,7 +172,10 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: (t
                         <span className="truncate">{entryLabel(field, e.value).sub}</span>
                       ) : (
                         <>
-                          <span className="truncate">by {displayName(e.submitter)}</span> {e.isTeam && <TeamBadge />}
+                          <span className="truncate">
+                            {field === "pair" && `${entryLabel(field, e.value).sub} · `}by {displayName(e.submitter)}
+                          </span>{" "}
+                          {e.isTeam && <TeamBadge />}
                         </>
                       )}
                       {lead && <span className="shrink-0 font-semibold text-accent">· {leaderWord}</span>}
@@ -192,9 +194,11 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: (t
         </ul>
       )}
 
-      {open && field !== "pair" && (
+      {open && (
         <div className="border-t border-white/[0.06] p-2.5">
-          {field === "image" ? (
+          {field === "pair" ? (
+            <PairPicker options={n.pairOptions.filter((o) => !b.entries.some((e) => e.value === o.symbol))} busy={busy !== null} onAdd={submit} />
+          ) : field === "image" ? (
             <div className="flex items-center gap-3">
               <input
                 ref={fileRef}
@@ -219,7 +223,7 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: (t
               <input
                 className={`input h-9 py-0 text-[0.82rem] ${field === "ticker" ? "num uppercase" : ""}`}
                 placeholder={PLACEHOLDER[field]}
-                maxLength={field === "name" ? 32 : field === "ticker" ? 11 : field === "fees" ? 44 : 300}
+                maxLength={field === "name" ? 32 : field === "ticker" ? 11 : 300}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 aria-label={`New ${FIELD_LABEL[field]} entry`}
@@ -245,6 +249,44 @@ function FieldBallot({ n, field, open, myVote }: { n: NarrativeDetail; field: (t
         />
       )}
     </section>
+  );
+}
+
+/** Adds a pair from pump.fun's list, grouped into coins and stocks. */
+function PairPicker({ options, busy, onAdd }: { options: PairOption[]; busy: boolean; onAdd: (symbol: string) => Promise<void> }) {
+  const [pick, setPick] = useState("");
+  const groups = [
+    ["Coins", options.filter((o) => o.kind === "crypto")],
+    ["Stocks", options.filter((o) => o.kind === "stock")],
+  ] as const;
+  return (
+    <form
+      className="flex gap-2"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!pick) return;
+        await onAdd(pick);
+        setPick("");
+      }}
+    >
+      <select className="input h-9 py-0 text-[0.82rem]" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="New Pair entry">
+        <option value="">Add a pair pump.fun accepts…</option>
+        {groups.map(([label, list]) =>
+          list.length ? (
+            <optgroup key={label} label={label}>
+              {list.map((o) => (
+                <option key={o.mint} value={o.symbol}>
+                  {o.symbol} · {o.name}
+                </option>
+              ))}
+            </optgroup>
+          ) : null,
+        )}
+      </select>
+      <button className="btn h-9 shrink-0 py-0 text-xs" disabled={!pick || busy}>
+        {busy ? "…" : "Add"}
+      </button>
+    </form>
   );
 }
 

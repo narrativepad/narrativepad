@@ -7,6 +7,7 @@ import { Countdown } from "@/components/Countdown";
 import { useMine } from "@/lib/client/useMine";
 import { useSigned } from "@/lib/client/useSigned";
 import { formatSol, formatTokens, launchBreakdown, parseSol } from "@/lib/math";
+import { FEE_MODE } from "@/lib/messages";
 import type { NarrativeDetail } from "@/lib/views";
 
 const QUICK = ["0.1", "0.25", "0.5", "1"];
@@ -25,6 +26,8 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
   const { run, busy } = useSigned();
   const { position } = useMine(n.id, version);
   const [amount, setAmount] = useState("");
+  /** This deposit's holder-rewards vote; no default, so nobody votes without choosing. */
+  const [holderRewards, setHolderRewards] = useState<boolean | null>(null);
 
   const total = BigInt(e.totalDeposited);
   const cap = BigInt(e.poolCap);
@@ -53,8 +56,14 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
 
   async function deposit(ev: React.FormEvent) {
     ev.preventDefault();
-    if (!parsed || amountError) return;
-    const out = await run("deposit", `/api/narratives/${n.id}/deposit`, "deposit", { narrativeId: n.id, amountLamports: parsed.toString() }, "You're in the pool");
+    if (!parsed || amountError || holderRewards === null) return;
+    const out = await run(
+      "deposit",
+      `/api/narratives/${n.id}/deposit`,
+      "deposit",
+      { narrativeId: n.id, amountLamports: parsed.toString(), holderRewards },
+      "You're in the pool",
+    );
     if (out) setAmount("");
   }
 
@@ -94,6 +103,8 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
           </div>
         </div>
 
+        <HolderVote e={e} />
+
         {pooling && (
           <form onSubmit={deposit} className="rounded-2xl border border-white/[0.07] bg-black/35 p-4">
             <div className="flex items-center justify-between text-[0.72rem] text-dim">
@@ -129,6 +140,37 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
                 </button>
               ))}
             </div>
+            <fieldset className="mt-3">
+              <legend className="flex w-full items-center justify-between text-[0.72rem] text-dim">
+                <span>Holder rewards</span>
+                <span>your vote counts with your SOL</span>
+              </legend>
+              <div className="mt-1.5 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Holder rewards">
+                {([true, false] as const).map((on) => (
+                  <button
+                    key={String(on)}
+                    type="button"
+                    role="radio"
+                    aria-checked={holderRewards === on}
+                    onClick={() => setHolderRewards(on)}
+                    className={`rounded-full border px-2 py-1.5 text-xs font-semibold transition-colors ${
+                      holderRewards === on ? "border-gold/60 bg-gold/10 text-gold" : "border-white/[0.08] text-muted hover:border-white/20 hover:text-ink"
+                    }`}
+                  >
+                    {on ? "On" : "Off"}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[0.72rem] leading-snug text-muted">
+                {holderRewards === null ? (
+                  <>
+                    <b className="font-medium text-ink">On:</b> {FEE_MODE.on.sub}. <b className="font-medium text-ink">Off:</b> {FEE_MODE.off.sub}.
+                  </>
+                ) : (
+                  <>{FEE_MODE[holderRewards ? "on" : "off"].sub}.</>
+                )}
+              </p>
+            </fieldset>
             <div className="mt-3 border-t border-line pt-2">
               {amountError ? (
                 <p className="py-1 text-xs text-danger">{amountError}</p>
@@ -153,8 +195,8 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
                 100% back if the pool misses {formatSol(min)} SOL or the launch fails.
               </li>
             </ul>
-            <button className="btn-accent mt-3 h-12 w-full text-[0.95rem]" disabled={!parsed || !!amountError || busy !== null}>
-              {busy === "deposit" ? "Joining…" : "Join the pool"}
+            <button className="btn-accent mt-3 h-12 w-full text-[0.95rem]" disabled={!parsed || !!amountError || holderRewards === null || busy !== null}>
+              {busy === "deposit" ? "Joining…" : parsed && !amountError && holderRewards === null ? "Vote holder rewards on or off" : "Join the pool"}
             </button>
             {n.preview && <p className="mt-2 text-center text-[0.72rem] text-warn/80">Preview build: this deposit is simulated. No SOL leaves your wallet.</p>}
           </form>
@@ -205,6 +247,38 @@ export function PoolPanel({ n, version }: { n: NarrativeDetail; version: string 
   );
 }
 
+/** The pool's holder-rewards vote by SOL behind each side. A tie is off. Settled at launch. */
+function HolderVote({ e }: { e: NonNullable<NarrativeDetail["escrow"]> }) {
+  const on = BigInt(e.holderVotesOn);
+  const off = BigInt(e.holderVotesOff);
+  const all = on + off;
+  if (all === 0n && e.holderRewards === null) return null;
+  const pct = all > 0n ? Number((on * 1000n) / all) / 10 : 0;
+  const result = e.holderRewards ?? on > off;
+  return (
+    <div className="rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2.5">
+      <div className="flex items-center justify-between text-[0.75rem]">
+        <span className="text-muted">Holder rewards vote</span>
+        <span className="font-semibold text-ink">
+          {result ? "On" : "Off"}
+          {e.holderRewards === null && <span className="font-normal text-dim"> so far</span>}
+        </span>
+      </div>
+      <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+        <div className="bg-gold transition-[width] duration-700" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="num mt-1.5 flex justify-between text-[0.68rem] text-dim">
+        <span>
+          on {pct.toFixed(0)}% · {formatSol(on)} SOL
+        </span>
+        <span>
+          off {(100 - pct).toFixed(0)}% · {formatSol(off)} SOL
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function ReleaseSchedule({ n }: { n: NarrativeDetail }) {
   const e = n.escrow!;
   const start = Date.parse(e.launchedAt!);
@@ -252,6 +326,7 @@ function Depositors({ n }: { n: NarrativeDetail }) {
             <span className="min-w-0 flex-1 truncate text-muted">
               <Who address={d.wallet} size={16} /> {d.isTeam && <TeamBadge />}
             </span>
+            {d.holderRewards !== null && <span className="text-[0.65rem] text-dim">rewards {d.holderRewards ? "on" : "off"}</span>}
             <span className="num text-ink">{formatSol(BigInt(d.amount))}</span>
           </li>
         ))}
