@@ -5,7 +5,7 @@ use crate::constants::*;
 use crate::errors::EscrowError;
 use crate::events::EscrowCreated;
 use crate::math;
-use crate::state::{Config, Escrow};
+use crate::state::{Config, Escrow, HolderVote};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct CreateEscrowParams {
@@ -46,6 +46,15 @@ pub struct CreateEscrow<'info> {
     #[account(mut, seeds = [SEED_VAULT, escrow.key().as_ref()], bump)]
     pub vault: SystemAccount<'info>,
     pub system_program: Program<'info, System>,
+    /// The pool's holder-rewards tally (D-022); the operator pays its rent.
+    #[account(
+        init,
+        payer = operator,
+        space = 8 + HolderVote::INIT_SPACE,
+        seeds = [SEED_HOLDER_VOTE, escrow.key().as_ref()],
+        bump
+    )]
+    pub holder_vote: Box<Account<'info, HolderVote>>,
 }
 
 fn validate(p: &CreateEscrowParams, config: &Config, now: i64) -> Result<()> {
@@ -126,6 +135,10 @@ pub fn process_create_escrow(ctx: Context<CreateEscrow>, p: CreateEscrowParams) 
     escrow.tranche_interval = p.tranche_interval;
     escrow.bump = ctx.bumps.escrow;
     escrow.vault_bump = ctx.bumps.vault;
+
+    let holder_vote = &mut ctx.accounts.holder_vote;
+    holder_vote.escrow = escrow_key;
+    holder_vote.bump = ctx.bumps.holder_vote;
 
     // The vault must stay rent-exempt for its whole life (pump also requires its payer to
     // end rent-exempt). Top it up to the floor; the operator pays.

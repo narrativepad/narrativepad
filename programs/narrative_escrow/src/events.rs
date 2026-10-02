@@ -26,6 +26,8 @@ pub struct Deposited {
     pub timestamp: i64,
     pub wallet_total: u64,
     pub pool_total: u64,
+    /// This deposit's holder-rewards vote (D-022).
+    pub holder_rewards: bool,
 }
 
 #[event]
@@ -45,6 +47,11 @@ pub struct Launched {
     pub tokens_bought: u64,
     pub base_leftover: u64,
     pub launched_at: i64,
+    /// The coin was created with pump's holder rewards (D-022).
+    pub holder_rewards: bool,
+    /// The SOL behind each answer when it launched.
+    pub holder_votes_on: u64,
+    pub holder_votes_off: u64,
 }
 
 #[event]

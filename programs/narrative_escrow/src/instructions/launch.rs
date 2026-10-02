@@ -7,7 +7,7 @@ use crate::errors::EscrowError;
 use crate::events::Launched;
 use crate::math::{bps_of, curve_tokens_out, net_of_fee};
 use crate::pump::{self, ra};
-use crate::state::{Escrow, Phase};
+use crate::state::{Escrow, HolderVote, Phase};
 
 /// Permissionless. Creates the coin on pump.fun with the locked metadata and spends the pool
 /// on the opening buy inside this ONE instruction, so nothing can be ordered between create
@@ -55,6 +55,10 @@ pub struct Launch<'info> {
     #[account(address = ASSOCIATED_TOKEN_PROGRAM_ID @ EscrowError::InvalidProgram)]
     pub associated_token_program: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
+    /// CHECK: the holder-rewards tally at its PDA (D-022). Pinned by seeds so a cranker can't
+    /// skip the vote; empty for escrows from before D-022 that got no deposit since.
+    #[account(mut, seeds = [SEED_HOLDER_VOTE, escrow.key().as_ref()], bump)]
+    pub holder_vote: UncheckedAccount<'info>,
 }
 
 pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64) -> Result<()> {
@@ -76,6 +80,13 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
     require_keys_eq!(r[ra::QUOTE_MINT].key(), WSOL_MINT, EscrowError::InvalidAccount);
     require_keys_eq!(r[ra::QUOTE_TOKEN_PROGRAM].key(), SPL_TOKEN_PROGRAM_ID, EscrowError::InvalidProgram);
     require_keys_eq!(r[ra::FEE_PROGRAM].key(), PUMP_FEE_PROGRAM_ID, EscrowError::InvalidProgram);
+
+    // Holder rewards (D-022): on only if more SOL voted for them and pump has them enabled;
+    // otherwise pump would reject the create and the pool could never launch.
+    let vote = HolderVote::read(&a.holder_vote.to_account_info())?;
+    let (votes_on, votes_off) = vote.as_ref().map(|v| (v.on, v.off)).unwrap_or((0, 0));
+    let holder_rewards = HolderVote::wants_on(vote.as_ref()) && pump::holder_rewards_enabled(&r[ra::GLOBAL])?;
+    let expected_creator = if holder_rewards { pump::holder_rewards_address(&mint_key) } else { vault_key };
 
     let total = a.escrow.total_deposited;
     let platform_fee = bps_of(total, a.escrow.fee_bps as u64).ok_or(EscrowError::MathOverflow)?;
@@ -122,6 +133,7 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
         &symbol,
         &uri,
         &vault_key,
+        holder_rewards,
         &[vault_seeds, mint_seeds],
     )?;
 
@@ -141,7 +153,7 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
 
     // 4. Bound the opening buy using the fresh curve.
     let curve = pump::read_curve(&r[ra::BONDING_CURVE])?;
-    require!(!curve.complete && curve.creator == vault_key, EscrowError::InvalidBondingCurve);
+    require!(!curve.complete && curve.creator == expected_creator, EscrowError::InvalidBondingCurve);
     let max_out = curve_tokens_out(budget, curve.virtual_token_reserves, curve.virtual_quote_reserves)
         .ok_or(EscrowError::MathOverflow)?;
     let fill_limit = bps_of(curve.real_token_reserves, MAX_CURVE_FILL_BPS).ok_or(EscrowError::MathOverflow)?;
@@ -186,6 +198,13 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
     escrow.tokens_bought = tokens;
     escrow.base_leftover = base_leftover;
 
+    if let Some(mut v) = vote {
+        v.applied = holder_rewards;
+        let info = ctx.accounts.holder_vote.to_account_info();
+        let mut data = info.try_borrow_mut_data()?;
+        v.try_serialize(&mut &mut data[..])?;
+    }
+
     emit!(Launched {
         escrow: escrow_key,
         mint: mint_key,
@@ -195,6 +214,9 @@ pub fn process_launch<'info>(ctx: Context<'info, Launch<'info>>, mint_nonce: u64
         tokens_bought: tokens,
         base_leftover,
         launched_at: now,
+        holder_rewards,
+        holder_votes_on: votes_on,
+        holder_votes_off: votes_off,
     });
     Ok(())
 }

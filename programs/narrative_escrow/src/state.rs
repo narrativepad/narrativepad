@@ -124,6 +124,38 @@ impl Escrow {
     }
 }
 
+/// The pool's holder-rewards vote (D-022): lamports deposited with each answer. Created with the
+/// escrow (or on the first deposit for escrows from before D-022) and settled once by `launch`,
+/// which turns pump's holder rewards on only if `on > off` and pump has them enabled.
+#[account]
+#[derive(InitSpace)]
+pub struct HolderVote {
+    pub escrow: Pubkey,
+    pub on: u64,
+    pub off: u64,
+    /// Set by `launch`: the coin was created with pump's holder rewards.
+    pub applied: bool,
+    pub bump: u8,
+}
+
+impl HolderVote {
+    /// Reads the tally behind an address checked by seeds. An account that was never created
+    /// (an escrow from before D-022 with no new deposits) is an empty tally.
+    pub fn read(info: &AccountInfo) -> Result<Option<HolderVote>> {
+        if info.data_is_empty() {
+            return Ok(None);
+        }
+        require_keys_eq!(*info.owner, crate::ID, crate::errors::EscrowError::InvalidAccount);
+        let data = info.try_borrow_data()?;
+        Ok(Some(HolderVote::try_deserialize(&mut &data[..])?))
+    }
+
+    /// Holder rewards win only with strictly more SOL behind "on"; a tie keeps them off.
+    pub fn wants_on(vote: Option<&HolderVote>) -> bool {
+        vote.map(|v| v.on > v.off).unwrap_or(false)
+    }
+}
+
 /// One per (escrow, depositor wallet). Every individual deposit is also emitted as an event
 /// with its own order index; this account aggregates them.
 #[account]

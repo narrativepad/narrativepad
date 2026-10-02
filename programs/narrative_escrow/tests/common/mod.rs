@@ -20,7 +20,8 @@ use solana_transaction_error::TransactionError;
 
 use narrative_escrow::constants::*;
 use narrative_escrow::instructions::{ConfigParams, CreateEscrowParams};
-use narrative_escrow::state::{Config, Escrow, Receipt};
+use narrative_escrow::state::{Config, Escrow, HolderVote, Receipt};
+use solana_account::Account;
 use narrative_escrow::{self as ne, math, pump};
 
 pub const SOL: u64 = 1_000_000_000;
@@ -62,7 +63,48 @@ impl Env {
         let mut env = Env { svm, admin, operator, treasury, proposer, nonce: 0 };
         env.set_upgrade_authority(env.admin.pubkey());
         env.set_time(T0);
+        env.set_pump_holder_rewards(true);
         env
+    }
+
+    /// pump's Global, owned by the mock: only `is_holder_reward_enabled` (byte 1086) is read.
+    /// Enabled by default, as on mainnet today; devnet has it off.
+    pub fn set_pump_holder_rewards(&mut self, enabled: bool) {
+        let mut data = vec![0u8; 1087];
+        data[PUMP_GLOBAL_HOLDER_REWARD_FLAG_OFFSET] = enabled as u8;
+        let lamports = self.svm.minimum_balance_for_rent_exemption(data.len());
+        let account = Account { lamports, data, owner: PUMP_PROGRAM_ID, executable: false, rent_epoch: 0 };
+        self.svm.set_account(pump_global_pda(), account).unwrap();
+    }
+
+    pub fn pump_holder_rewards_enabled(&self) -> bool {
+        self.svm.get_account(&pump_global_pda()).map(|a| a.data[PUMP_GLOBAL_HOLDER_REWARD_FLAG_OFFSET] != 0).unwrap_or(false)
+    }
+
+    /// Deletes an account, e.g. to recreate an escrow from before the holder-rewards vote.
+    pub fn remove_account(&mut self, key: &Pubkey) {
+        self.svm.set_account(*key, Account::default()).unwrap();
+    }
+
+    pub fn holder_vote(&self, escrow: &Pubkey) -> Option<HolderVote> {
+        let acc = self.svm.get_account(&holder_vote_pda(escrow))?;
+        if acc.data.is_empty() {
+            return None;
+        }
+        Some(HolderVote::try_deserialize(&mut acc.data.as_slice()).unwrap())
+    }
+
+    /// The creator pump recorded on a coin's bonding curve.
+    pub fn curve_creator(&self, mint: &Pubkey) -> Pubkey {
+        let curve = pump::bonding_curve_address(mint);
+        let acc = self.svm.get_account(&curve).expect("bonding curve");
+        Pubkey::new_from_array(acc.data[49..81].try_into().unwrap())
+    }
+
+    /// What a correct client predicts the launch will do, so it passes the matching creator
+    /// vault: holder rewards iff more SOL voted "on" and pump has them enabled.
+    pub fn expects_holder_rewards(&self, escrow: &Pubkey) -> bool {
+        self.holder_vote(escrow).map(|v| v.on > v.off).unwrap_or(false) && self.pump_holder_rewards_enabled()
     }
 
     /// `bare()` + `init_config` with the default (D-006/D-007) parameters.
@@ -195,12 +237,18 @@ impl Env {
         escrow_pda(&id)
     }
 
+    /// A deposit voting holder rewards off.
     pub fn deposit(&mut self, who: &Keypair, escrow: &Pubkey, amount: u64) -> TxResult {
-        self.send(&[deposit_ix(&who.pubkey(), escrow, amount)], who, &[])
+        self.deposit_vote(who, escrow, amount, false)
+    }
+
+    pub fn deposit_vote(&mut self, who: &Keypair, escrow: &Pubkey, amount: u64, holder_rewards: bool) -> TxResult {
+        self.send(&[deposit_vote_ix(&who.pubkey(), escrow, amount, holder_rewards)], who, &[])
     }
 
     pub fn launch(&mut self, cranker: &Keypair, escrow: &Pubkey, nonce: u64) -> TxResult {
-        let ix = launch_ix(&cranker.pubkey(), escrow, &self.treasury, nonce, None);
+        let holder = self.expects_holder_rewards(escrow);
+        let ix = launch_ix_with(&cranker.pubkey(), escrow, &self.treasury, nonce, None, holder);
         self.send(&[ix], cranker, &[])
     }
 
@@ -279,6 +327,15 @@ pub fn mint_pda(escrow: &Pubkey, nonce: u64) -> Pubkey {
 pub fn t22_ata(owner: &Pubkey, mint: &Pubkey) -> Pubkey {
     pump::ata_address(owner, mint, &TOKEN_2022_PROGRAM_ID)
 }
+pub fn holder_vote_pda(escrow: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[SEED_HOLDER_VOTE, escrow.as_ref()], &ne::ID).0
+}
+pub fn holder_rewards_pda(mint: &Pubkey) -> Pubkey {
+    pump::holder_rewards_address(mint)
+}
+pub fn pump_global_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"global"], &PUMP_PROGRAM_ID).0
+}
 
 // ---- instruction builders -------------------------------------------------------------------
 
@@ -326,6 +383,7 @@ pub fn create_escrow_ix(operator: &Pubkey, params: CreateEscrowParams) -> Instru
             escrow,
             vault: vault_pda(&escrow),
             system_program: anchor_lang::system_program::ID,
+            holder_vote: holder_vote_pda(&escrow),
         }
         .to_account_metas(None),
         data: ne::instruction::CreateEscrow { params }.data(),
@@ -333,10 +391,18 @@ pub fn create_escrow_ix(operator: &Pubkey, params: CreateEscrowParams) -> Instru
 }
 
 pub fn deposit_ix(depositor: &Pubkey, escrow: &Pubkey, amount: u64) -> Instruction {
-    deposit_ix_with_vault(depositor, escrow, &vault_pda(escrow), amount)
+    deposit_vote_ix(depositor, escrow, amount, false)
+}
+
+pub fn deposit_vote_ix(depositor: &Pubkey, escrow: &Pubkey, amount: u64, holder_rewards: bool) -> Instruction {
+    deposit_ix_raw(depositor, escrow, &vault_pda(escrow), &holder_vote_pda(escrow), amount, holder_rewards)
 }
 
 pub fn deposit_ix_with_vault(depositor: &Pubkey, escrow: &Pubkey, vault: &Pubkey, amount: u64) -> Instruction {
+    deposit_ix_raw(depositor, escrow, vault, &holder_vote_pda(escrow), amount, false)
+}
+
+pub fn deposit_ix_raw(depositor: &Pubkey, escrow: &Pubkey, vault: &Pubkey, holder_vote: &Pubkey, amount: u64, holder_rewards: bool) -> Instruction {
     Instruction {
         program_id: ne::ID,
         accounts: ne::accounts::Deposit {
@@ -345,9 +411,10 @@ pub fn deposit_ix_with_vault(depositor: &Pubkey, escrow: &Pubkey, vault: &Pubkey
             vault: *vault,
             receipt: receipt_pda(escrow, depositor),
             system_program: anchor_lang::system_program::ID,
+            holder_vote: *holder_vote,
         }
         .to_account_metas(None),
-        data: ne::instruction::Deposit { amount }.data(),
+        data: ne::instruction::Deposit { amount, holder_rewards }.data(),
     }
 }
 
@@ -381,6 +448,7 @@ pub struct LaunchAccounts {
     pub pump_program: Pubkey,
     pub token_program: Pubkey,
     pub associated_token_program: Pubkey,
+    pub holder_vote: Pubkey,
 }
 
 pub fn launch_accounts(cranker: &Pubkey, escrow: &Pubkey, treasury: &Pubkey, nonce: u64) -> LaunchAccounts {
@@ -397,6 +465,7 @@ pub fn launch_accounts(cranker: &Pubkey, escrow: &Pubkey, treasury: &Pubkey, non
         pump_program: PUMP_PROGRAM_ID,
         token_program: TOKEN_2022_PROGRAM_ID,
         associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
+        holder_vote: holder_vote_pda(escrow),
     }
 }
 
@@ -413,6 +482,7 @@ pub fn launch_ix_from(a: &LaunchAccounts, nonce: u64, remaining: Vec<AccountMeta
         token_program: a.token_program,
         associated_token_program: a.associated_token_program,
         system_program: anchor_lang::system_program::ID,
+        holder_vote: a.holder_vote,
     }
     .to_account_metas(None);
     accounts.extend(remaining);
@@ -420,6 +490,7 @@ pub fn launch_ix_from(a: &LaunchAccounts, nonce: u64, remaining: Vec<AccountMeta
 }
 
 /// `create_payer`: None = the vault pays pump's create rent (default); Some = fallback §4.3b.
+/// Holder rewards off (creator = vault).
 pub fn launch_ix(
     cranker: &Pubkey,
     escrow: &Pubkey,
@@ -427,16 +498,36 @@ pub fn launch_ix(
     nonce: u64,
     create_payer: Option<Pubkey>,
 ) -> Instruction {
+    launch_ix_with(cranker, escrow, treasury, nonce, create_payer, false)
+}
+
+/// `holder_rewards`: the client's prediction of the launch, which decides the creator vault
+/// pump expects (the holder-rewards PDA's when on).
+pub fn launch_ix_with(
+    cranker: &Pubkey,
+    escrow: &Pubkey,
+    treasury: &Pubkey,
+    nonce: u64,
+    create_payer: Option<Pubkey>,
+    holder_rewards: bool,
+) -> Instruction {
     let mut a = launch_accounts(cranker, escrow, treasury, nonce);
     if let Some(p) = create_payer {
         a.create_payer = p;
     }
-    let remaining = launch_remaining(&a.vault, &a.mint);
+    let creator = if holder_rewards { holder_rewards_pda(&a.mint) } else { a.vault };
+    let remaining = launch_remaining_for(&a.vault, &a.mint, &creator);
     launch_ix_from(&a, nonce, remaining)
 }
 
-/// pump's accounts in `pump::ra` order (same flags as the real IDL).
+/// pump's accounts in `pump::ra` order, for a coin whose creator is the vault.
 pub fn launch_remaining(vault: &Pubkey, mint: &Pubkey) -> Vec<AccountMeta> {
+    launch_remaining_for(vault, mint, vault)
+}
+
+/// pump's accounts in `pump::ra` order (same flags as the real IDL). `creator` is who pump
+/// records as the coin's creator: the vault, or the holder-rewards PDA (D-022).
+pub fn launch_remaining_for(vault: &Pubkey, mint: &Pubkey, creator: &Pubkey) -> Vec<AccountMeta> {
     let pda = |seeds: &[&[u8]], program: &Pubkey| Pubkey::find_program_address(seeds, program).0;
     let w = |k: Pubkey| AccountMeta::new(k, false);
     let r = |k: Pubkey| AccountMeta::new_readonly(k, false);
@@ -446,7 +537,7 @@ pub fn launch_remaining(vault: &Pubkey, mint: &Pubkey) -> Vec<AccountMeta> {
 
     let bonding_curve = pda(&[b"bonding-curve", mint.as_ref()], &PUMP_PROGRAM_ID);
     let sol_vault = pda(&[b"sol-vault"], &MAYHEM_PROGRAM_ID);
-    let creator_vault = pda(&[b"creator-vault", vault.as_ref()], &PUMP_PROGRAM_ID);
+    let creator_vault = pda(&[b"creator-vault", creator.as_ref()], &PUMP_PROGRAM_ID);
     let user_volume = pda(&[b"user_volume_accumulator", vault.as_ref()], &PUMP_PROGRAM_ID);
 
     let metas = vec![
@@ -512,6 +603,7 @@ pub fn distribute_ix(escrow: &Pubkey, proposer: &Pubkey, treasury: &Pubkey) -> I
             proposer: *proposer,
             treasury: *treasury,
             system_program: anchor_lang::system_program::ID,
+            holder_vote: holder_vote_pda(escrow),
         }
         .to_account_metas(None),
         data: ne::instruction::DistributeCreatorFees {}.data(),

@@ -41,8 +41,8 @@ pub mod narrative_escrow {
         instructions::create_escrow::process_create_escrow(ctx, params)
     }
 
-    pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
-        instructions::deposit::process_deposit(ctx, amount)
+    pub fn deposit(ctx: Context<Deposit>, amount: u64, holder_rewards: bool) -> Result<()> {
+        instructions::deposit::process_deposit(ctx, amount, holder_rewards)
     }
 
     pub fn refund(ctx: Context<Refund>) -> Result<()> {

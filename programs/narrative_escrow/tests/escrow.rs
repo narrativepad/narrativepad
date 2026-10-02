@@ -6,6 +6,7 @@
 //!   double-claim ............ claim_vesting_schedule_and_no_double_claim
 //!   rounding dust ........... rounding_dust_is_bounded_and_burnable
 //!   signer / PDA checks ..... *_rejects_* tests
+//!   holder rewards (D-022) .. holder_* tests
 mod common;
 
 use anchor_lang::error::ErrorCode as Anchor;
@@ -397,6 +398,12 @@ fn launch_rejects_account_substitution() {
     r.pop();
     expect_err(env.send(&[launch_ix_from(&acc, 1, r)], &crank, &[]), code(E::InvalidAccount));
 
+    // A different holder-vote account, to skip the pool's vote.
+    let mut acc = base();
+    acc.holder_vote = Keypair::new().pubkey();
+    let r = rem(&acc);
+    expect_err(env.send(&[launch_ix_from(&acc, 1, r)], &crank, &[]), anchor(Anchor::ConstraintSeeds));
+
     // After all that, an honest launch still works and nothing moved.
     assert_eq!(env.escrow(&escrow).total_deposited, 3 * SOL);
     ok(env.launch(&crank, &escrow, 1));
@@ -616,6 +623,125 @@ fn distribute_before_launch_fails() {
     let crank = env.funded(1);
     let (p, t) = (env.proposer, env.treasury);
     expect_err(env.send(&[distribute_ix(&escrow, &p, &t)], &crank, &[]), code(E::NotLaunched));
+}
+
+// ---- holder rewards (D-022) -----------------------------------------------------------------
+
+/// Deposits each `(sol, vote)`, moves to the launch window and launches with nonce 1.
+fn launch_with_votes(env: &mut Env, name: &str, votes: &[(u64, bool)]) -> (Pubkey, Pubkey, TxResult) {
+    let escrow = env.create_default(name);
+    for (amount, on) in votes {
+        let w = env.funded(amount / SOL + 2);
+        ok(env.deposit_vote(&w, &escrow, *amount, *on));
+    }
+    let launch_after = env.escrow(&escrow).launch_after;
+    env.set_time(launch_after);
+    let crank = env.funded(1);
+    let res = env.launch(&crank, &escrow, 1);
+    (escrow, mint_pda(&escrow, 1), res)
+}
+
+#[test]
+fn holder_vote_tallies_every_deposit_by_its_sol() {
+    let mut env = Env::new();
+    let escrow = env.create_default("Tally");
+    let v = env.holder_vote(&escrow).expect("created with the escrow");
+    assert_eq!((v.on, v.off, v.applied), (0, 0, false));
+    let (a, b) = (env.funded(10), env.funded(10));
+    ok(env.deposit_vote(&a, &escrow, 2 * SOL, true));
+    ok(env.deposit_vote(&b, &escrow, 3 * SOL, false));
+    ok(env.deposit_vote(&a, &escrow, SOL, true));
+    let v = env.holder_vote(&escrow).unwrap();
+    assert_eq!((v.on, v.off), (3 * SOL, 3 * SOL));
+    assert_eq!(v.escrow, escrow);
+}
+
+#[test]
+fn holder_rewards_on_when_more_sol_votes_on() {
+    let mut env = Env::new();
+    // Two wallets say off, one bigger wallet says on: SOL decides, not headcount.
+    let (escrow, mint, res) = launch_with_votes(&mut env, "HolderOn", &[(3 * SOL, true), (SOL, false), (SOL, false)]);
+    ok(res);
+    assert_eq!(env.curve_creator(&mint), holder_rewards_pda(&mint), "pump made the holder-rewards PDA the creator");
+    assert!(env.holder_vote(&escrow).unwrap().applied);
+    assert!(env.escrow(&escrow).launched);
+}
+
+#[test]
+fn holder_rewards_off_on_a_tie_or_an_off_majority() {
+    for (name, votes) in [("Tie", vec![(2 * SOL, true), (2 * SOL, false)]), ("OffWins", vec![(SOL, true), (3 * SOL, false)])] {
+        let mut env = Env::new();
+        let (escrow, mint, res) = launch_with_votes(&mut env, name, &votes);
+        ok(res);
+        assert_eq!(env.curve_creator(&mint), vault_pda(&escrow), "{name}: creator fees stay with the vault");
+        assert!(!env.holder_vote(&escrow).unwrap().applied, "{name}");
+    }
+}
+
+#[test]
+fn holder_rewards_fall_back_to_off_when_pump_disables_them() {
+    // As on devnet: a pool that votes on must still launch rather than hit HolderRewardDisabled.
+    let mut env = Env::new();
+    env.set_pump_holder_rewards(false);
+    let (escrow, mint, res) = launch_with_votes(&mut env, "PumpOff", &[(3 * SOL, true)]);
+    ok(res);
+    assert_eq!(env.curve_creator(&mint), vault_pda(&escrow));
+    assert!(!env.holder_vote(&escrow).unwrap().applied);
+}
+
+#[test]
+fn holder_rewards_need_the_matching_creator_vault() {
+    // A client that predicts "off" when the vote says "on" passes the vault's creator vault;
+    // pump rejects it and nothing moves. The launch then succeeds with the right accounts.
+    let mut env = Env::new();
+    let escrow = env.create_default("Predict");
+    let a = env.funded(10);
+    ok(env.deposit_vote(&a, &escrow, 3 * SOL, true));
+    env.set_time(T0 + 720);
+    let crank = env.funded(1);
+    let wrong = launch_ix(&crank.pubkey(), &escrow, &env.treasury.clone(), 1, None);
+    assert!(env.send(&[wrong], &crank, &[]).is_err());
+    assert!(!env.escrow(&escrow).launched);
+    ok(env.launch(&crank, &escrow, 1));
+    assert!(env.holder_vote(&escrow).unwrap().applied);
+}
+
+#[test]
+fn holder_vote_works_for_escrows_from_before_it() {
+    // An escrow created before D-022 has no holder-vote account: its first deposit creates it.
+    let mut env = Env::new();
+    let escrow = env.create_default("Legacy");
+    env.remove_account(&holder_vote_pda(&escrow));
+    assert!(env.holder_vote(&escrow).is_none());
+    let a = env.funded(10);
+    ok(env.deposit_vote(&a, &escrow, 3 * SOL, true));
+    assert_eq!(env.holder_vote(&escrow).unwrap().on, 3 * SOL);
+
+    // And one whose tally never existed launches with holder rewards off.
+    let other = env.create_default("Legacy2");
+    let b = env.funded(10);
+    ok(env.deposit_vote(&b, &other, 3 * SOL, true));
+    env.remove_account(&holder_vote_pda(&other));
+    env.set_time(T0 + 720);
+    let crank = env.funded(1);
+    ok(env.launch(&crank, &other, 1));
+    assert_eq!(env.curve_creator(&mint_pda(&other, 1)), vault_pda(&other));
+}
+
+#[test]
+fn holder_rewards_send_all_vault_income_to_depositors() {
+    let mut env = Env::new();
+    let (escrow, _mint, res) = launch_with_votes(&mut env, "AllToHolders", &[(SOL, true), (3 * SOL, true)]);
+    ok(res);
+    // pump pays holder rewards to token holders, and the vault holds tokens for depositors.
+    env.svm.airdrop(&vault_pda(&escrow), SOL).unwrap();
+    let (proposer, treasury) = (env.proposer, env.treasury);
+    let (p0, t0) = (env.lamports(&proposer), env.lamports(&treasury));
+    let crank = env.funded(1);
+    ok(env.send(&[distribute_ix(&escrow, &proposer, &treasury)], &crank, &[]));
+    assert_eq!(env.lamports(&proposer), p0, "no proposer share");
+    assert_eq!(env.lamports(&treasury), t0, "no platform share");
+    assert_eq!(env.escrow(&escrow).creator_fees_depositors_total, SOL);
 }
 
 #[test]

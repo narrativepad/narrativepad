@@ -6,6 +6,9 @@ pub const SEED_ESCROW: &[u8] = b"escrow";
 pub const SEED_VAULT: &[u8] = b"vault";
 pub const SEED_RECEIPT: &[u8] = b"receipt";
 pub const SEED_MINT: &[u8] = b"mint";
+/// Per-escrow holder-rewards tally (D-022). Its own account, so escrows created before it keep
+/// their layout.
+pub const SEED_HOLDER_VOTE: &[u8] = b"holder_vote";
 
 // ---- Fees ---------------------------------------------------------------------------------
 pub const BPS_DENOMINATOR: u64 = 10_000;
@@ -55,3 +58,6 @@ pub const WSOL_MINT: Pubkey = pubkey!("So111111111111111111111111111111111111111
 pub const PUMP_IX_CREATE_V2: [u8; 8] = [214, 144, 76, 236, 95, 139, 49, 180];
 pub const PUMP_IX_BUY_EXACT_QUOTE_IN_V2: [u8; 8] = [194, 171, 28, 70, 104, 77, 91, 47];
 pub const PUMP_ACCOUNT_BONDING_CURVE: [u8; 8] = [23, 183, 248, 55, 96, 216, 172, 96];
+/// pump `Global.is_holder_reward_enabled` (idls/pump.json: the last field of the 1087-byte layout;
+/// later fields are appended after it, as devnet's 1088-byte Global shows).
+pub const PUMP_GLOBAL_HOLDER_REWARD_FLAG_OFFSET: usize = 1086;

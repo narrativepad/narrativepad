@@ -85,14 +85,32 @@ pub struct CreateV2Accounts<'a, 'info> {
     pub ra: &'a [AccountInfo<'info>],
 }
 
+/// The account pump makes a holder-rewards coin's creator: `["holder-rewards", mint]`.
+pub fn holder_rewards_address(mint: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[b"holder-rewards", mint.as_ref()], &PUMP_PROGRAM_ID).0
+}
+
+/// pump's `Global.is_holder_reward_enabled`. When it is off, `create_v2` rejects holder-reward
+/// coins (`HolderRewardDisabled`), so the launch falls back to normal creator fees instead of
+/// failing. Only pump's real Global is read; pump re-validates the same account in the CPI.
+pub fn holder_rewards_enabled(global: &AccountInfo) -> Result<bool> {
+    let expected = Pubkey::find_program_address(&[b"global"], &PUMP_PROGRAM_ID).0;
+    require_keys_eq!(*global.key, expected, EscrowError::InvalidAccount);
+    require_keys_eq!(*global.owner, PUMP_PROGRAM_ID, EscrowError::InvalidAccount);
+    let data = global.try_borrow_data()?;
+    Ok(data.len() > PUMP_GLOBAL_HOLDER_REWARD_FLAG_OFFSET && data[PUMP_GLOBAL_HOLDER_REWARD_FLAG_OFFSET] != 0)
+}
+
 /// `create_v2(name, symbol, uri, creator, is_mayhem_mode=false, cashback=false,
-/// creator_fee_bps=0, is_holder_reward=false)`. Account order per idls/pump.json.
+/// creator_fee_bps=0, is_holder_reward)`. Account order per idls/pump.json.
+#[allow(clippy::too_many_arguments)]
 pub fn create_v2(
     a: &CreateV2Accounts,
     name: &str,
     symbol: &str,
     uri: &str,
     creator: &Pubkey,
+    is_holder_reward: bool,
     signer_seeds: &[&[&[u8]]],
 ) -> Result<()> {
     let r = a.ra;
@@ -124,7 +142,9 @@ pub fn create_v2(
     data.push(0); // is_mayhem_mode = false
     data.push(0); // is_cashback_enabled = OptionBool(false) (deprecated; must be false)
     data.extend_from_slice(&0u64.to_le_bytes()); // creator_fee_bps = OptionU64(0) (standard schedule)
-    data.push(0); // is_holder_reward = OptionBool(false): creator fees go to `creator` (D-006)
+    // is_holder_reward = OptionBool: true routes creator fees to the coin's holders (pump makes
+    // the holder-rewards PDA the creator); false sends them to `creator`, our vault (D-006, D-022).
+    data.push(is_holder_reward as u8);
 
     let ix = Instruction { program_id: PUMP_PROGRAM_ID, accounts, data };
     let infos = [

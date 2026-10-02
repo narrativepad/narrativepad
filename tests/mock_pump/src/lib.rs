@@ -54,7 +54,12 @@ pub enum MockError {
     CreateFailed,
     BuyFailed,
     Slippage,
+    HolderRewardDisabled,
+    WrongCreatorVault,
 }
+
+/// `Global.is_holder_reward_enabled` (idls/pump.json).
+pub const GLOBAL_HOLDER_REWARD_FLAG: usize = 1086;
 
 fn put_u64(d: &mut [u8], off: usize, v: u64) {
     d[off..off + 8].copy_from_slice(&v.to_le_bytes());
@@ -77,10 +82,21 @@ pub mod mock_pump {
         _is_mayhem_mode: bool,
         _is_cashback_enabled: OptionBool,
         _creator_fee_bps: OptionU64,
-        _is_holder_reward: OptionBool,
+        is_holder_reward: OptionBool,
     ) -> Result<()> {
         require!(!name.starts_with("FAIL_CREATE"), MockError::CreateFailed);
         let a = &ctx.accounts;
+        // Like pump: holder-reward coins need Global.is_holder_reward_enabled (byte 1086), and
+        // their creator becomes the holder-rewards PDA instead of the `creator` argument.
+        if is_holder_reward.0 {
+            let g = a.global.try_borrow_data()?;
+            require!(g.len() > GLOBAL_HOLDER_REWARD_FLAG && g[GLOBAL_HOLDER_REWARD_FLAG] != 0, MockError::HolderRewardDisabled);
+        }
+        let creator = if is_holder_reward.0 {
+            Pubkey::find_program_address(&[b"holder-rewards", a.mint.key().as_ref()], &crate::ID).0
+        } else {
+            creator
+        };
         let rent = Rent::get()?;
         let sys = a.system_program.key();
         let tok = a.token_program.key();
@@ -159,11 +175,16 @@ pub mod mock_pump {
         min_tokens_out: u64,
     ) -> Result<()> {
         let a = &ctx.accounts;
-        let (vt, vq, rt, rq, m) = {
+        let (vt, vq, rt, rq, m, curve_creator) = {
             let d = a.bonding_curve.try_borrow_data()?;
-            (get_u64(&d, 8), get_u64(&d, 16), get_u64(&d, 24), get_u64(&d, 32), d[MODE_OFFSET])
+            let creator = Pubkey::new_from_array(d[49..81].try_into().unwrap());
+            (get_u64(&d, 8), get_u64(&d, 16), get_u64(&d, 24), get_u64(&d, 32), d[MODE_OFFSET], creator)
         };
         require!(m != mode::FAIL_BUY, MockError::BuyFailed);
+        // Like pump: the creator vault must belong to the curve's recorded creator, so a client
+        // has to derive it from the holder-rewards PDA when holder rewards are on.
+        let expected_vault = Pubkey::find_program_address(&[b"creator-vault", curve_creator.as_ref()], &crate::ID).0;
+        require_keys_eq!(a.creator_vault.key(), expected_vault, MockError::WrongCreatorVault);
 
         // Same arithmetic as pump's SDK at a 125 bps total fee.
         let net = (spendable_quote_in.saturating_sub(1) as u128 * 10_000 / 10_125) as u64;

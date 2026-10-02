@@ -4,7 +4,7 @@ use anchor_lang::system_program;
 use crate::constants::*;
 use crate::errors::EscrowError;
 use crate::events::Deposited;
-use crate::state::{Escrow, Phase, Receipt};
+use crate::state::{Escrow, HolderVote, Phase, Receipt};
 
 #[derive(Accounts)]
 pub struct Deposit<'info> {
@@ -23,14 +23,26 @@ pub struct Deposit<'info> {
     )]
     pub receipt: Box<Account<'info, Receipt>>,
     pub system_program: Program<'info, System>,
+    /// The pool's holder-rewards tally. Created with the escrow; `init_if_needed` only covers
+    /// escrows from before D-022, whose first new depositor pays its small rent.
+    #[account(
+        init_if_needed,
+        payer = depositor,
+        space = 8 + HolderVote::INIT_SPACE,
+        seeds = [SEED_HOLDER_VOTE, escrow.key().as_ref()],
+        bump
+    )]
+    pub holder_vote: Box<Account<'info, HolderVote>>,
 }
 
-pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+/// `holder_rewards` is this deposit's vote; it counts with `amount` lamports (D-022).
+pub fn process_deposit(ctx: Context<Deposit>, amount: u64, holder_rewards: bool) -> Result<()> {
     let clock = Clock::get()?;
     let escrow_key = ctx.accounts.escrow.key();
     let depositor_key = ctx.accounts.depositor.key();
     let escrow = &mut ctx.accounts.escrow;
     let receipt = &mut ctx.accounts.receipt;
+    let vote = &mut ctx.accounts.holder_vote;
 
     require!(escrow.phase(clock.unix_timestamp) == Phase::Pooling, EscrowError::NotPooling);
     require!(amount >= escrow.min_deposit, EscrowError::DepositTooSmall);
@@ -53,6 +65,16 @@ pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
     receipt.deposit_count = receipt.deposit_count.checked_add(1).ok_or(EscrowError::MathOverflow)?;
     escrow.total_deposited = pool_total;
 
+    if vote.escrow == Pubkey::default() {
+        vote.escrow = escrow_key;
+        vote.bump = ctx.bumps.holder_vote;
+    }
+    if holder_rewards {
+        vote.on = vote.on.checked_add(amount).ok_or(EscrowError::MathOverflow)?;
+    } else {
+        vote.off = vote.off.checked_add(amount).ok_or(EscrowError::MathOverflow)?;
+    }
+
     system_program::transfer(
         CpiContext::new(
             ctx.accounts.system_program.key(),
@@ -73,6 +95,7 @@ pub fn process_deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
         timestamp: clock.unix_timestamp,
         wallet_total,
         pool_total,
+        holder_rewards,
     });
     Ok(())
 }

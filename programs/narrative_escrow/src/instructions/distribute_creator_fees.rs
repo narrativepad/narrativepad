@@ -5,13 +5,14 @@ use crate::constants::*;
 use crate::errors::EscrowError;
 use crate::events::CreatorFeesDistributed;
 use crate::math::bps_of;
-use crate::state::Escrow;
+use crate::state::{Escrow, HolderVote};
 
 /// Permissionless. Pump pays creator fees to `creator` = our vault (anyone can trigger
 /// `collect_creator_fee_v2`; AMM fees arrive as wSOL and are unwrapped by `sweep_wsol`).
 /// Everything in the vault above what is owed to depositors is creator-fee income and is
 /// split by the ratios frozen into the escrow (D-006): proposer, platform, and the rest to
-/// depositors pro-rata (credited here, pulled via `claim`).
+/// depositors pro-rata (credited here, pulled via `claim`). If the coin launched with holder
+/// rewards (D-022), all of it goes to depositors.
 #[derive(Accounts)]
 pub struct DistributeCreatorFees<'info> {
     #[account(mut, seeds = [SEED_ESCROW, escrow.narrative_id.as_ref()], bump = escrow.bump)]
@@ -25,6 +26,9 @@ pub struct DistributeCreatorFees<'info> {
     #[account(mut, address = escrow.treasury @ EscrowError::InvalidAccount)]
     pub treasury: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
+    /// CHECK: the holder-rewards tally at its PDA (D-022); may be empty for old escrows.
+    #[account(seeds = [SEED_HOLDER_VOTE, escrow.key().as_ref()], bump)]
+    pub holder_vote: UncheckedAccount<'info>,
 }
 
 pub fn process_distribute_creator_fees(ctx: Context<DistributeCreatorFees>) -> Result<()> {
@@ -46,6 +50,13 @@ pub fn process_distribute_creator_fees(ctx: Context<DistributeCreatorFees>) -> R
     let payable = |share: u64, to: &AccountInfo| to.lamports() > 0 || share >= rent_floor;
     let mut proposer_share = bps_of(surplus, e.creator_fee_proposer_bps as u64).ok_or_else(overflow)?;
     let mut platform_share = bps_of(surplus, e.creator_fee_platform_bps as u64).ok_or_else(overflow)?;
+    // The pool voted fees to holders (D-022): pump pays holders itself, and whatever reaches the
+    // vault (holder rewards on the tokens it holds for depositors) goes entirely to depositors.
+    let to_holders = HolderVote::read(&ctx.accounts.holder_vote.to_account_info())?.map(|v| v.applied).unwrap_or(false);
+    if to_holders {
+        proposer_share = 0;
+        platform_share = 0;
+    }
     if !payable(proposer_share, &ctx.accounts.proposer.to_account_info()) {
         proposer_share = 0;
     }
